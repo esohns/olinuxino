@@ -1,5 +1,5 @@
 SUBDIRS = \
-	ko \
-	test_u
+  ko \
+  test_u
 
 

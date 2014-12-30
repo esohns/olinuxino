@@ -1,3 +1,6 @@
+SUBDIRS = \
+  3rd_party
+
 AM_CPPFLAGS = \
   -I/usr/src/linux/include
 

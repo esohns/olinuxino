@@ -1,692 +1,501 @@
-/*
- * short.c -- Simple Hardware Operations and Raw Tests
- * short.c -- also a brief example of interrupt handling ("short int")
- *
- * Copyright (C) 2001 Alessandro Rubini and Jonathan Corbet
- * Copyright (C) 2001 O'Reilly & Associates
- *
- * The source code in this file can be freely used, adapted,
- * and redistributed in source or binary form, so long as an
- * acknowledgment appears in derived source files.  The citation
- * should list that the code comes from the book "Linux Device
- * Drivers" by Alessandro Rubini and Jonathan Corbet, published
- * by O'Reilly & Associates.   No warranty is attached;
- * we cannot take responsibility for errors or fitness for use.
- *
- * $Id: short.c,v 1.16 2004/10/29 16:45:40 corbet Exp $
- */
+/*  I2C kernel module driver for the Olimex MOD-MPU6050 UEXT module
+    (see https://www.olimex.com/Products/Modules/Sensors/MOD-MPU6050/open-source-hardware,
+         http://www.invensense.com/mems/gyro/mpu6050.html)
 
-/*
- * FIXME: this driver is not safe with concurrent readers or
- * writers.
- */
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
 
-//#include <linux/config.h>
-#include <linux/module.h>
-#include <linux/moduleparam.h>
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>. */
+
 #include <linux/init.h>
-
-#include <linux/sched.h>
-#include <linux/kernel.h>	/* printk() */
-#include <linux/fs.h>		/* everything... */
-#include <linux/errno.h>	/* error codes */
-#include <linux/delay.h>	/* udelay */
-#include <linux/kdev_t.h>
-#include <linux/slab.h>
-#include <linux/mm.h>
-#include <linux/ioport.h>
+#include <linux/module.h>
+#include <linux/device.h>
+#include <linux/kernel.h>
 #include <linux/interrupt.h>
+#include <linux/fs.h>
+#include <linux/kobject.h>
+#include <linux/sysfs.h>
+#include <linux/delay.h>
+#include <linux/spi/spi.h>
+#include <linux/random.h>
+#include <linux/irq.h>
+#include <linux/gpio.h>
 #include <linux/workqueue.h>
-#include <linux/poll.h>
-#include <linux/wait.h>
+#include <linux/sched.h>
+#include <linux/spinlock.h>
 
-#include <asm/io.h>
+// example SPI device registers
+#define SOMEKINDOFRESETCOMMAND 0
+#define SOMEREG 0
+#define SPIDEVDATAREG 0
 
-#define SHORT_NR_PORTS	8	/* use 8 ports by default */
+// our interrupt name for the GPIO19 pin interrupt
+#define GPIO19_INT_NAME  "gpio19_int"
 
-/*
- * all of the parameters have no "short_" prefix, to save typing when
- * specifying them at load time
- */
-static int major = 0;	/* dynamic by default */
-module_param(major, int, 0);
+// this is used to calculate device pin value from the GPIO pin value
+#define GPIO_TO_PIN(bank, gpio) (32 * (bank) + (gpio))
 
-static int use_mem = 0;	/* default is I/O-mapped */
-module_param(use_mem, int, 0);
+// our two used GPIO pins
+#define BEAGLEBONE_GPIO19 GPIO_TO_PIN(3, 19)
+#define BEAGLEBONE_GPIO21 GPIO_TO_PIN(3, 21)
 
-/* default is the first printer port on PC's. "short_base" is there too
-   because it's what we want to use in the code */
-static unsigned long base = 0x378;
-unsigned long short_base = 0;
-module_param(base, long, 0);
+// GPIO pins of the two used user LEDs
+#define BEAGLEBONE_USR3_LED GPIO_TO_PIN(1, 23)
+#define BEAGLEBONE_USR4_LED GPIO_TO_PIN(1, 24)
 
-/* The interrupt line is undefined by default. "short_irq" is as above */
-static int irq = -1;
-volatile int short_irq = -1;
-module_param(irq, int, 0);
+// macros for turning the LEDs on and off
+#define BEAGLEBONE_LED3ON gpio_set_value(BEAGLEBONE_USR3_LED, 255)
+#define BEAGLEBONE_LED3OFF gpio_set_value(BEAGLEBONE_USR3_LED, 0)
+#define BEAGLEBONE_LED4ON gpio_set_value(BEAGLEBONE_USR4_LED, 255)
+#define BEAGLEBONE_LED4OFF gpio_set_value(BEAGLEBONE_USR4_LED, 0)
 
-static int probe = 0;	/* select at load time how to probe irq line */
-module_param(probe, int, 0);
+// macros to check the values of the GPIO pins
+#define BEAGLEBONE_GPIO19_HIGH gpio_get_value(BEAGLEBONE_GPIO19)
+#define BEAGLEBONE_GPIO19_LOW (gpio_get_value(BEAGLEBONE_GPIO19) == 0)
+#define BEAGLEBONE_GPIO21_HIGH gpio_get_value(BEAGLEBONE_GPIO21)
+#define BEAGLEBONE_GPIO21_LOW (gpio_get_value(BEAGLEBONE_GPIO21) == 0)
 
-static int wq = 0;	/* select at load time whether a workqueue is used */
-module_param(wq, int, 0);
+static struct kobject *spikernmodex_kobj; // this is used for the sysfs entries
+static struct spi_device *myspi;
 
-static int tasklet = 0;	/* select whether a tasklet is used */
-module_param(tasklet, int, 0);
+// this FIFO store is used for storing incoming data from the sysfs file
+// this stored data gets sent to the SPI device
+#define FIFOSTORESIZE 20
+#define FIFOSTOREDATASIZE 64
+typedef struct {
+  uint8_t data[FIFOSTOREDATASIZE];
+  int size;
+} fifostoreentry;
+static fifostoreentry fifostore[FIFOSTORESIZE];
+static int fifostorepos = 0;
 
-static int share = 0;	/* select at load time whether install a shared irq */
-module_param(share, int, 0);
+// this ringbuffer is used for storing incoming data from the SPI device
+// when the user reads the sysfs file, this ringbuffer's contents get printed out
+#define RINGBUFFERSIZE 20
+#define RINGBUFFERDATASIZE 64
+typedef struct {
+  int used;
+  int completed;
+  uint8_t data[RINGBUFFERDATASIZE];
+  int size;
+} ringbufferentry;
+static ringbufferentry ringbuffer[RINGBUFFERSIZE];
+static int ringbufferpos = 0;
 
-MODULE_AUTHOR ("Alessandro Rubini");
-MODULE_LICENSE("Dual BSD/GPL");
+static struct workqueue_struct* spikernmodex_workqueue;
+static struct work_struct spikernmodex_work_processfifostore;
+static struct work_struct spikernmodex_work_read;
 
+// this spinlock is used for disabling interrupts while spi_sync() is running
+static DEFINE_SPINLOCK(spilock);
+static unsigned long spilockflags;
 
-unsigned long short_buffer = 0;
-unsigned long volatile short_head;
-volatile unsigned long short_tail;
-DECLARE_WAIT_QUEUE_HEAD(short_queue);
-
-/* Set up our tasklet if we're doing that. */
-void short_do_tasklet(unsigned long);
-DECLARE_TASKLET(short_tasklet, short_do_tasklet, 0);
-
-/*
- * Atomicly increment an index into short_buffer
- */
-static inline void short_incr_bp(volatile unsigned long *index, int delta)
+// this function sends the register value "reg", then "val", then returns with a read byte
+// all SPI calls are implemented using spi_sync because the callback function given to
+// spi_async() didn't got called for me on the BeagleBone
+static uint8_t spi_write_reg(uint8_t reg, uint8_t val)
 {
-	unsigned long new = *index + delta;
-	barrier();  /* Don't optimize these two together */
-	*index = (new >= (short_buffer + PAGE_SIZE)) ? short_buffer : new;
+  struct spi_transfer t[3];
+  struct spi_message m;
+  uint8_t rxbuf;
+
+  spi_message_init(&m);
+
+  memset(t, 0, sizeof(t));
+
+  t[0].tx_buf = &reg;
+  t[0].len = 1;
+  spi_message_add_tail(&t[0], &m);
+
+  t[1].tx_buf = &val;
+  t[1].len = 1;
+  spi_message_add_tail(&t[1], &m);
+
+  t[2].rx_buf = &rxbuf;
+  t[2].len = 1;
+  spi_message_add_tail(&t[2], &m);
+
+  spin_lock_irqsave(&spilock, spilockflags);
+  spi_sync(myspi, &m);
+  spin_unlock_irqrestore(&spilock, spilockflags);
+
+  return rxbuf;
 }
 
-
-/*
- * The devices with low minor numbers write/read burst of data to/from
- * specific I/O ports (by default the parallel ones).
- * 
- * The device with 128 as minor number returns ascii strings telling
- * when interrupts have been received. Writing to the device toggles
- * 00/FF on the parallel data lines. If there is a loopback wire, this
- * generates interrupts.  
- */
-
-int short_open (struct inode *inode, struct file *filp)
+// this function writes "count" bytes from "buf" to the given "reg" register
+static void spi_write_reg_burst(uint8_t reg, const uint8_t *buf, size_t count)
 {
-	extern struct file_operations short_i_fops;
+  struct spi_transfer t[2];
+  struct spi_message m;
 
-	if (iminor (inode) & 0x80)
-		filp->f_op = &short_i_fops; /* the interrupt-driven node */
-	return 0;
+  spi_message_init(&m);
+
+  memset(t, 0, sizeof(t));
+
+  t[0].tx_buf = &reg;
+  t[0].len = 1;
+  spi_message_add_tail(&t[0], &m);
+
+  t[1].tx_buf = buf;
+  t[1].len = count;
+  spi_message_add_tail(&t[1], &m);
+
+  spin_lock_irqsave(&spilock, spilockflags);
+  spi_sync(myspi, &m);
+  spin_unlock_irqrestore(&spilock, spilockflags);
 }
 
-
-int short_release (struct inode *inode, struct file *filp)
+// this function reads "count" bytes from the "reg" register to "dst"
+static uint8_t spi_read_reg_burst(uint8_t reg, uint8_t *dst, size_t count)
 {
-	return 0;
+  struct spi_transfer t[2];
+  struct spi_message m;
+
+  spi_message_init(&m);
+
+  memset(t, 0, sizeof(t));
+
+  t[0].tx_buf = &reg;
+  t[0].len = 1;
+  spi_message_add_tail(&t[0], &m);
+
+  t[1].rx_buf = (uint8_t *)dst;
+  t[1].len = count;
+  spi_message_add_tail(&t[1], &m);
+
+  spin_lock_irqsave(&spilock, spilockflags);
+  spi_sync(myspi, &m);
+  spin_unlock_irqrestore(&spilock, spilockflags);
+
+  return 0;
 }
 
-
-/* first, the port-oriented device */
-
-enum short_modes {SHORT_DEFAULT=0, SHORT_PAUSE, SHORT_STRING, SHORT_MEMORY};
-
-ssize_t do_short_read (struct inode *inode, struct file *filp, char __user *buf,
-		size_t count, loff_t *f_pos)
+// this wrapper function returns the value of register "reg"
+static uint8_t spi_read_reg(uint8_t reg)
 {
-	int retval = count, minor = iminor (inode);
-	unsigned long port = short_base + (minor&0x0f);
-	void *address = (void *) short_base + (minor&0x0f);
-	int mode = (minor&0x70) >> 4;
-	unsigned char *kbuf = kmalloc(count, GFP_KERNEL), *ptr;
-    
-	if (!kbuf)
-		return -ENOMEM;
-	ptr = kbuf;
+  uint8_t res;
 
-	if (use_mem)
-		mode = SHORT_MEMORY;
-	
-	switch(mode) {
-	    case SHORT_STRING:
-		insb(port, ptr, count);
-		rmb();
-		break;
+  if (spi_read_reg_burst(reg, &res, 1) == 0)
+    return res;
 
-	    case SHORT_DEFAULT:
-		while (count--) {
-			*(ptr++) = inb(port);
-			rmb();
-		}
-		break;
-
-	    case SHORT_MEMORY:
-		while (count--) {
-			*ptr++ = ioread8(address);
-			rmb();
-		}
-		break;
-	    case SHORT_PAUSE:
-		while (count--) {
-			*(ptr++) = inb_p(port);
-			rmb();
-		}
-		break;
-
-	    default: /* no more modes defined by now */
-		retval = -EINVAL;
-		break;
-	}
-	if ((retval > 0) && copy_to_user(buf, kbuf, retval))
-		retval = -EFAULT;
-	kfree(kbuf);
-	return retval;
+  return 0;
 }
 
-
-/*
- * Version-specific methods for the fops structure.  FIXME don't need anymore.
- */
-ssize_t short_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
+// thiw wrapper function executes the cmd command and returns with the value returned by the SPI device
+static uint8_t spi_cmd(uint8_t cmd)
 {
-	return do_short_read(filp->f_dentry->d_inode, filp, buf, count, f_pos);
+  return spi_read_reg(cmd);
 }
 
-
-
-ssize_t do_short_write (struct inode *inode, struct file *filp, const char __user *buf,
-		size_t count, loff_t *f_pos)
+// this function is called when writing to the "store" sysfs file
+static ssize_t spikernmodex_store_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
 {
-	int retval = count, minor = iminor(inode);
-	unsigned long port = short_base + (minor&0x0f);
-	void *address = (void *) short_base + (minor&0x0f);
-	int mode = (minor&0x70) >> 4;
-	unsigned char *kbuf = kmalloc(count, GFP_KERNEL), *ptr;
+  if (count > FIFOSTOREDATASIZE) {
+    printk(KERN_ERR "can't store data because it's too big.");
+    return 0;
+  }
 
-	if (!kbuf)
-		return -ENOMEM;
-	if (copy_from_user(kbuf, buf, count))
-		return -EFAULT;
-	ptr = kbuf;
+  if (fifostorepos >= FIFOSTORESIZE) {
+    printk(KERN_ERR "can't store data because fifo is full.");
+    return 0;
+  }
 
-	if (use_mem)
-		mode = SHORT_MEMORY;
+  printk(KERN_DEBUG "store_store(): storing %d bytes to store pos 0x%.2x\n", count, fifostorepos);
 
-	switch(mode) {
-	case SHORT_PAUSE:
-		while (count--) {
-			outb_p(*(ptr++), port);
-			wmb();
-		}
-		break;
+  memcpy(fifostore[fifostorepos].data, buf, count);
+  fifostore[fifostorepos].size = count;
+  fifostorepos++;
 
-	case SHORT_STRING:
-		outsb(port, ptr, count);
-		wmb();
-		break;
+  printk(KERN_DEBUG "queueing work PROCESSFIFOSTORE\n");
+  queue_work(spikernmodex_workqueue, &spikernmodex_work_processfifostore);
 
-	case SHORT_DEFAULT:
-		while (count--) {
-			outb(*(ptr++), port);
-			wmb();
-		}
-		break;
-
-	case SHORT_MEMORY:
-		while (count--) {
-			iowrite8(*ptr++, address);
-			wmb();
-		}
-		break;
-
-	default: /* no more modes defined by now */
-		retval = -EINVAL;
-		break;
-	}
-	kfree(kbuf);
-	return retval;
+  return count;
 }
 
-
-ssize_t short_write(struct file *filp, const char __user *buf, size_t count,
-		loff_t *f_pos)
+// this function is called when reading from the "store" sysfs file
+static ssize_t spikernmodex_store_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
 {
-	return do_short_write(filp->f_dentry->d_inode, filp, buf, count, f_pos);
+  int currentbufsize;
+  int i = ringbufferpos+1;
+
+  if (i == RINGBUFFERSIZE)
+    i = 0;
+
+  while (i != ringbufferpos) {
+    if (ringbuffer[i].completed) {
+      currentbufsize = ringbuffer[i].size;
+      // we found a used & completed slot, outputting
+      printk(KERN_DEBUG "store_show(): outputting ringbuf %.2x, %d bytes\n", i, currentbufsize);
+      memcpy(buf, ringbuffer[i].data, currentbufsize);
+      ringbuffer[i].completed = ringbuffer[i].used = 0;
+      return currentbufsize;
+    }
+
+    i++;
+    if (i == RINGBUFFERSIZE)
+      i = 0;
+  }
+
+    return 0;
 }
 
+void spikernmodex_workqueue_handler(struct work_struct *work) {
+  int i, j;
 
+  // this work outputs all data stored in the FIFO to the SPI device
+  if (work == &spikernmodex_work_processfifostore) {
+    printk(KERN_DEBUG "work PROCESSFIFOSTORE called\n");
 
+    while (fifostorepos > 0) { // processing all items in the fifo store
+      printk(KERN_DEBUG "%d entries in fifo store\n", fifostorepos);
 
-unsigned int short_poll(struct file *filp, poll_table *wait)
-{
-	return POLLIN | POLLRDNORM | POLLOUT | POLLWRNORM;
+      printk(KERN_DEBUG "sending %d bytes\n", fifostore[0].size);
+      BEAGLEBONE_LED3ON;
+      spi_write_reg_burst(SPIDEVDATAREG, fifostore[0].data, fifostore[0].size);
+      BEAGLEBONE_LED3OFF;
+
+      // left shifting the FIFO store
+      for (i = 1; i < FIFOSTORESIZE; i++) {
+        for (j = 0; j < fifostore[i].size; j++)
+          fifostore[i-1].data[j] = fifostore[i].data[j];
+        fifostore[i-1].size = fifostore[i].size;
+      }
+      fifostorepos--;
+    }
+  }
+
+  // this work reads some data from the SPI device to the ringbuffer
+  if (work == &spikernmodex_work_read) {
+    printk(KERN_DEBUG "work READ called, ringbuf %.2x\n", ringbufferpos);
+
+    memset(&ringbuffer[ringbufferpos].data, 0, RINGBUFFERDATASIZE);
+    ringbuffer[ringbufferpos].used = 1;
+
+    BEAGLEBONE_LED4ON;
+    spi_read_reg_burst(SPIDEVDATAREG, ringbuffer[ringbufferpos].data, RINGBUFFERDATASIZE);
+    ringbuffer[ringbufferpos].size = RINGBUFFERDATASIZE;
+    BEAGLEBONE_LED4ON;
+
+    printk(KERN_DEBUG "read stopped, ringbuf %.2x\n", ringbufferpos);
+    ringbuffer[ringbufferpos].completed = 1;
+
+    ringbufferpos++;
+    if (ringbufferpos == RINGBUFFERSIZE)
+      ringbufferpos = 0;
+  }
+
+  printk(KERN_DEBUG "work exit\n");
 }
 
+// this function gets called when an interrupt happens for the registered GPIO pins
+irqreturn_t spikernmodex_interrupt_handler(int irq, void *dev_id)
+{
+  enum { falling, rising } type;
 
+  printk(KERN_DEBUG "interrupt received (irq: %d)\n", irq);
 
+  if (irq == gpio_to_irq(BEAGLEBONE_GPIO19)) {
+    type = BEAGLEBONE_GPIO19_LOW ? falling : rising;
 
+    if (type == rising) {
+      printk(KERN_DEBUG "rising GPIO19 interrupt received, queueing work READ\n");
+      queue_work(spikernmodex_workqueue, &spikernmodex_work_read);
+      return IRQ_HANDLED;
+    }
+  }
 
+  return IRQ_HANDLED;
+}
 
-struct file_operations short_fops = {
-	.owner	 = THIS_MODULE,
-	.read	 = short_read,
-	.write	 = short_write,
-	.poll	 = short_poll,
-	.open	 = short_open,
-	.release = short_release,
+static void spikernmodex_clearringbuffer(void)
+{
+  int i;
+
+  for (i = 0; i < RINGBUFFERSIZE; i++)
+    ringbuffer[i].completed = ringbuffer[i].used = 0;
+}
+
+// this functions gets called when the user reads the sysfs file "somereg"
+static ssize_t spikernmodex_somereg_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+{
+  // outputting the value of register "SOMEREG"
+  return sprintf(buf, "%x\n", spi_read_reg(SOMEREG));
+}
+
+// this function gets called when the user writes the sysfs file "somereg"
+static ssize_t spikernmodex_somereg_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
+{
+  unsigned int val;
+  sscanf(buf, "%x", &val);
+  spi_write_reg(SOMEREG, (uint8_t)val);
+  printk(KERN_DEBUG "stored %.2x to register SOMEREG\n", (uint8_t)val);
+  return count;
+}
+
+// this function gets called when the user writes the sysfs file "clearringbuffer"
+static ssize_t spikernmodex_clearringbuffer_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
+{
+  spikernmodex_clearringbuffer();
+  printk(KERN_DEBUG "ringbuffer cleared.\n");
+  return count;
+}
+
+// these two functions are called when the user reads the sysfs files "gpio19state" and "gpio21state"
+static ssize_t spikernmodex_gpio19state_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+{
+  return sprintf(buf, "%d\n", (BEAGLEBONE_GPIO19_LOW ? 0 : 1));
+}
+static ssize_t spikernmodex_gpio21state_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+{
+  return sprintf(buf, "%d\n", (BEAGLEBONE_GPIO21_LOW ? 0 : 1));
+}
+
+static struct kobj_attribute store_attribute = __ATTR(data, 0666, spikernmodex_store_show, spikernmodex_store_store);
+static struct kobj_attribute somereg_attribute = __ATTR(addr, 0666, spikernmodex_somereg_show, spikernmodex_somereg_store);
+static struct kobj_attribute clearringbuffer_attribute = __ATTR(clearringbuffer, 0666, NULL, spikernmodex_clearringbuffer_store);
+static struct kobj_attribute gpio19state_attribute = __ATTR(gpio19state, 0666, spikernmodex_gpio19state_show, NULL);
+static struct kobj_attribute gpio21state_attribute = __ATTR(gpio21state, 0666, spikernmodex_gpio21state_show, NULL);
+
+// a group of attributes so that we can create and destroy them all at once
+static struct attribute *attrs[] = {
+  &store_attribute.attr,
+  &somereg_attribute.attr,
+  &clearringbuffer_attribute.attr,
+  &gpio19state_attribute.attr,
+  &gpio21state_attribute.attr,
+  NULL, // need to NULL terminate the list of attributes
 };
 
-/* then,  the interrupt-related device */
+/* An unnamed attribute group will put all of the attributes directly in
+ * the kobject directory.  If we specify a name, a subdirectory will be
+ * created for the attributes with the directory being the name of the
+ * attribute group.
+ */
+static struct attribute_group attr_group = { .attrs = attrs };
 
-ssize_t short_i_read (struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
-{
-	int count0;
-	DEFINE_WAIT(wait);
+static int __devinit spikernmodex_probe(struct spi_device *spi); // prototype
+static int spikernmodex_remove(struct spi_device *spi); // prototype
 
-	while (short_head == short_tail) {
-		prepare_to_wait(&short_queue, &wait, TASK_INTERRUPTIBLE);
-		if (short_head == short_tail)
-			schedule();
-		finish_wait(&short_queue, &wait);
-		if (signal_pending (current))  /* a signal arrived */
-			return -ERESTARTSYS; /* tell the fs layer to handle it */
-	} 
-	/* count0 is the number of readable data bytes */
-	count0 = short_head - short_tail;
-	if (count0 < 0) /* wrapped */
-		count0 = short_buffer + PAGE_SIZE - short_tail;
-	if (count0 < count) count = count0;
-
-	if (copy_to_user(buf, (char *)short_tail, count))
-		return -EFAULT;
-	short_incr_bp (&short_tail, count);
-	return count;
-}
-
-ssize_t short_i_write (struct file *filp, const char __user *buf, size_t count,
-		loff_t *f_pos)
-{
-	int written = 0, odd = *f_pos & 1;
-	unsigned long port = short_base; /* output to the parallel data latch */
-	void *address = (void *) short_base;
-
-	if (use_mem) {
-		while (written < count)
-			iowrite8(0xff * ((++written + odd) & 1), address);
-	} else {
-		while (written < count)
-			outb(0xff * ((++written + odd) & 1), port);
-	}
-
-	*f_pos += count;
-	return written;
-}
-
-
-
-
-struct file_operations short_i_fops = {
-	.owner	 = THIS_MODULE,
-	.read	 = short_i_read,
-	.write	 = short_i_write,
-	.open	 = short_open,
-	.release = short_release,
+// this is the spi driver structure which has the driver name and the two
+// functions to call when probing and removing
+static struct spi_driver spikernmodex_driver = {
+  .driver = {
+    .name = "spikernmodex", // be sure to match this with the spi_board_info modalias in arch/am/mach-omap2/board-am335xevm.c
+    .owner = THIS_MODULE
+  },
+  .probe = spikernmodex_probe,
+    .remove = __devexit_p(spikernmodex_remove)
 };
 
-irqreturn_t short_interrupt(int irq, void *dev_id, struct pt_regs *regs)
+// this function gets called when a matching modalias and driver name found
+static int __devinit spikernmodex_probe(struct spi_device *spi)
 {
-	struct timeval tv;
-	int written;
+  int err;
 
-	do_gettimeofday(&tv);
+  printk(KERN_DEBUG "spikernmodex_probe() called.\n");
 
-	    /* Write a 16 byte record. Assume PAGE_SIZE is a multiple of 16 */
-	written = sprintf((char *)short_head,"%08u.%06u\n",
-			(int)(tv.tv_sec % 100000000), (int)(tv.tv_usec));
-	BUG_ON(written != 16);
-	short_incr_bp(&short_head, written);
-	wake_up_interruptible(&short_queue); /* awake any reading process */
-	return IRQ_HANDLED;
+  spikernmodex_kobj = kobject_create_and_add("spikernmodex", kernel_kobj);
+  if (!spikernmodex_kobj) {
+    printk(KERN_ERR "unable to create sysfs object\n");
+    return -ENOMEM;
+  }
+
+  // create the files associated with this kobject
+  err = sysfs_create_group(spikernmodex_kobj, &attr_group);
+  if (err) {
+    kobject_put(spikernmodex_kobj);
+    printk(KERN_ERR "unable to create sysfs files\n");
+    return -ENOMEM;
+  }
+
+  // initalizing SPI interface
+  myspi = spi;
+  myspi->max_speed_hz = 5000000; // get this from your SPI device's datasheet
+  spi_setup(myspi);
+
+  // initializing device
+  spi_cmd(SOMEKINDOFRESETCOMMAND);
+  mdelay(100);
+
+  // initializing workqueue
+  spikernmodex_workqueue = create_singlethread_workqueue("spikernmodex_workqueue");
+  INIT_WORK(&spikernmodex_work_processfifostore, spikernmodex_workqueue_handler);
+  INIT_WORK(&spikernmodex_work_read, spikernmodex_workqueue_handler);
+
+  // initializing interrupt for GPIO19
+  // we need to set the interrupt for both falling and rising trigger as the (dynamically configurable) GPIO function can be triggered on both edges
+  err = request_irq(gpio_to_irq(BEAGLEBONE_GPIO19), spikernmodex_interrupt_handler, IRQF_TRIGGER_FALLING|IRQF_TRIGGER_RISING, GPIO19_INT_NAME, NULL);
+  if (err) {
+    printk(KERN_ERR "request IRQ error: GPIO19 already claimed or allocation failed!\n");
+    return(-EIO);
+  }
+
+  spikernmodex_clearringbuffer();
+
+  printk(KERN_INFO "Example SPI driver by Nonoo (www.nonoo.hu) loaded.\n");
+
+  return err;
 }
 
-/*
- * The following two functions are equivalent to the previous one,
- * but split in top and bottom half. First, a few needed variables
- */
-
-#define NR_TIMEVAL 512 /* length of the array of time values */
-
-struct timeval tv_data[NR_TIMEVAL]; /* too lazy to allocate it */
-volatile struct timeval *tv_head=tv_data;
-volatile struct timeval *tv_tail=tv_data;
-
-static struct work_struct short_wq;
-
-
-int short_wq_count = 0;
-
-/*
- * Increment a circular buffer pointer in a way that nobody sees
- * an intermediate value.
- */
-static inline void short_incr_tv(volatile struct timeval **tvp)
+// this function gets called when our example SPI driver gets removed with spi_unregister_driver()
+static int spikernmodex_remove(struct spi_device *spi)
 {
-	if (*tvp == (tv_data + NR_TIMEVAL - 1))
-		*tvp = tv_data;	 /* Wrap */
-	else
-		(*tvp)++;
+  printk(KERN_DEBUG "spikernmodex_remove() called.\n");
+
+  // freeing used interrupts
+  free_irq(gpio_to_irq(BEAGLEBONE_GPIO19), NULL);
+
+  // resetting device
+  spi_cmd(SOMEKINDOFRESETCOMMAND);
+
+  // destroying the sysfs structure
+  kobject_put(spikernmodex_kobj);
+
+  // destroying the workqueue
+  flush_workqueue(spikernmodex_workqueue);
+  destroy_workqueue(spikernmodex_workqueue);
+
+  return 0;
 }
 
-
-
-void short_do_tasklet (unsigned long unused)
+// this gets called on module init
+static int __init spikernmodex_init(void)
 {
-	int savecount = short_wq_count, written;
-	short_wq_count = 0; /* we have already been removed from the queue */
-	/*
-	 * The bottom half reads the tv array, filled by the top half,
-	 * and prints it to the circular text buffer, which is then consumed
-	 * by reading processes
-	 */
+  int error;
 
-	/* First write the number of interrupts that occurred before this bh */
-	written = sprintf((char *)short_head,"bh after %6i\n",savecount);
-	short_incr_bp(&short_head, written);
+  printk(KERN_INFO "Loading example SPI driver by Nonoo (www.nonoo.hu)...\n");
 
-	/*
-	 * Then, write the time values. Write exactly 16 bytes at a time,
-	 * so it aligns with PAGE_SIZE
-	 */
+  // registering SPI driver, this will call spikernmodex_probe()
+  error = spi_register_driver(&spikernmodex_driver);
+  if (error < 0) {
+    printk(KERN_ERR "spi_register_driver() failed %d\n", error);
+    return error;
+  }
 
-	do {
-		written = sprintf((char *)short_head,"%08u.%06u\n",
-				(int)(tv_tail->tv_sec % 100000000),
-				(int)(tv_tail->tv_usec));
-		short_incr_bp(&short_head, written);
-		short_incr_tv(&tv_tail);
-	} while (tv_tail != tv_head);
-
-	wake_up_interruptible(&short_queue); /* awake any reading process */
+  return 0;
 }
 
-
-irqreturn_t short_wq_interrupt(int irq, void *dev_id, struct pt_regs *regs)
+// this gets called when module is getting unloaded
+static void __exit spikernmodex_exit(void)
 {
-	/* Grab the current time information. */
-	do_gettimeofday((struct timeval *) tv_head);
-	short_incr_tv(&tv_head);
-
-	/* Queue the bh. Don't worry about multiple enqueueing */
-	schedule_work(&short_wq);
-
-	short_wq_count++; /* record that an interrupt arrived */
-	return IRQ_HANDLED;
+  // unregistering SPI driver, this will call cc1101_remove()
+  spi_unregister_driver(&spikernmodex_driver);
+  printk(KERN_INFO "Example SPI driver by Nonoo (www.nonoo.hu) removed.\n");
 }
 
+// setting which function to call on module init and exit
+module_init(spikernmodex_init);
+module_exit(spikernmodex_exit);
 
-/*
- * Tasklet top half
- */
-
-irqreturn_t short_tl_interrupt(int irq, void *dev_id, struct pt_regs *regs)
-{
-	do_gettimeofday((struct timeval *) tv_head); /* cast to stop 'volatile' warning */
-	short_incr_tv(&tv_head);
-	tasklet_schedule(&short_tasklet);
-	short_wq_count++; /* record that an interrupt arrived */
-	return IRQ_HANDLED;
-}
-
-
-
-
-irqreturn_t short_sh_interrupt(int irq, void *dev_id, struct pt_regs *regs)
-{
-	int value, written;
-	struct timeval tv;
-
-	/* If it wasn't short, return immediately */
-	value = inb(short_base);
-	if (!(value & 0x80))
-		return IRQ_NONE;
-	
-	/* clear the interrupting bit */
-	outb(value & 0x7F, short_base);
-
-	/* the rest is unchanged */
-
-	do_gettimeofday(&tv);
-	written = sprintf((char *)short_head,"%08u.%06u\n",
-			(int)(tv.tv_sec % 100000000), (int)(tv.tv_usec));
-	short_incr_bp(&short_head, written);
-	wake_up_interruptible(&short_queue); /* awake any reading process */
-	return IRQ_HANDLED;
-}
-
-void short_kernelprobe(void)
-{
-	int count = 0;
-	do {
-		unsigned long mask;
-
-		mask = probe_irq_on();
-		outb_p(0x10,short_base+2); /* enable reporting */
-		outb_p(0x00,short_base);   /* clear the bit */
-		outb_p(0xFF,short_base);   /* set the bit: interrupt! */
-		outb_p(0x00,short_base+2); /* disable reporting */
-		udelay(5);  /* give it some time */
-		short_irq = probe_irq_off(mask);
-
-		if (short_irq == 0) { /* none of them? */
-			printk(KERN_INFO "short: no irq reported by probe\n");
-			short_irq = -1;
-		}
-		/*
-		 * if more than one line has been activated, the result is
-		 * negative. We should service the interrupt (no need for lpt port)
-		 * and loop over again. Loop at most five times, then give up
-		 */
-	} while (short_irq < 0 && count++ < 5);
-	if (short_irq < 0)
-		printk("short: probe failed %i times, giving up\n", count);
-}
-
-irqreturn_t short_probing(int irq, void *dev_id, struct pt_regs *regs)
-{
-	if (short_irq == 0) short_irq = irq;	/* found */
-	if (short_irq != irq) short_irq = -irq; /* ambiguous */
-	return IRQ_HANDLED;
-}
-
-void short_selfprobe(void)
-{
-	int trials[] = {3, 5, 7, 9, 0};
-	int tried[]  = {0, 0, 0, 0, 0};
-	int i, count = 0;
-
-	/*
-	 * install the probing handler for all possible lines. Remember
-	 * the result (0 for success, or -EBUSY) in order to only free
-	 * what has been acquired
-      */
-	for (i = 0; trials[i]; i++)
-		tried[i] = request_irq(trials[i], short_probing,
-				SA_INTERRUPT, "short probe", NULL);
-
-	do {
-		short_irq = 0; /* none got, yet */
-		outb_p(0x10,short_base+2); /* enable */
-		outb_p(0x00,short_base);
-		outb_p(0xFF,short_base); /* toggle the bit */
-		outb_p(0x00,short_base+2); /* disable */
-		udelay(5);  /* give it some time */
-
-		/* the value has been set by the handler */
-		if (short_irq == 0) { /* none of them? */
-			printk(KERN_INFO "short: no irq reported by probe\n");
-		}
-		/*
-		 * If more than one line has been activated, the result is
-		 * negative. We should service the interrupt (but the lpt port
-		 * doesn't need it) and loop over again. Do it at most 5 times
-		 */
-	} while (short_irq <=0 && count++ < 5);
-
-	/* end of loop, uninstall the handler */
-	for (i = 0; trials[i]; i++)
-		if (tried[i] == 0)
-			free_irq(trials[i], NULL);
-
-	if (short_irq < 0)
-		printk("short: probe failed %i times, giving up\n", count);
-}
-
-
-
-/* Finally, init and cleanup */
-
-int short_init(void)
-{
-	int result;
-
-	/*
-	 * first, sort out the base/short_base ambiguity: we'd better
-	 * use short_base in the code, for clarity, but allow setting
-	 * just "base" at load time. Same for "irq".
-	 */
-	short_base = base;
-	short_irq = irq;
-
-	/* Get our needed resources. */
-	if (!use_mem) {
-		if (! request_region(short_base, SHORT_NR_PORTS, "short")) {
-			printk(KERN_INFO "short: can't get I/O port address 0x%lx\n",
-					short_base);
-			return -ENODEV;
-		}
-
-	} else {
-		if (! request_mem_region(short_base, SHORT_NR_PORTS, "short")) {
-			printk(KERN_INFO "short: can't get I/O mem address 0x%lx\n",
-					short_base);
-			return -ENODEV;
-		}
-
-		/* also, ioremap it */
-		short_base = (unsigned long) ioremap(short_base, SHORT_NR_PORTS);
-		/* Hmm... we should check the return value */
-	}
-	/* Here we register our device - should not fail thereafter */
-	result = register_chrdev(major, "short", &short_fops);
-	if (result < 0) {
-		printk(KERN_INFO "short: can't get major number\n");
-		release_region(short_base,SHORT_NR_PORTS);  /* FIXME - use-mem case? */
-		return result;
-	}
-	if (major == 0) major = result; /* dynamic */
-
-	short_buffer = __get_free_pages(GFP_KERNEL,0); /* never fails */  /* FIXME */
-	short_head = short_tail = short_buffer;
-
-	/*
-	 * Fill the workqueue structure, used for the bottom half handler.
-	 * The cast is there to prevent warnings about the type of the
-	 * (unused) argument.
-	 */
-	/* this line is in short_init() */
-	INIT_WORK(&short_wq, (void (*)(void *)) short_do_tasklet, NULL);
-
-	/*
-	 * Now we deal with the interrupt: either kernel-based
-	 * autodetection, DIY detection or default number
-	 */
-
-	if (short_irq < 0 && probe == 1)
-		short_kernelprobe();
-
-	if (short_irq < 0 && probe == 2)
-		short_selfprobe();
-
-	if (short_irq < 0) /* not yet specified: force the default on */
-		switch(short_base) {
-		    case 0x378: short_irq = 7; break;
-		    case 0x278: short_irq = 2; break;
-		    case 0x3bc: short_irq = 5; break;
-		}
-
-	/*
-	 * If shared has been specified, installed the shared handler
-	 * instead of the normal one. Do it first, before a -EBUSY will
-	 * force short_irq to -1.
-	 */
-	if (short_irq >= 0 && share > 0) {
-		result = request_irq(short_irq, short_sh_interrupt,
-				SA_SHIRQ | SA_INTERRUPT,"short",
-				short_sh_interrupt);
-		if (result) {
-			printk(KERN_INFO "short: can't get assigned irq %i\n", short_irq);
-			short_irq = -1;
-		}
-		else { /* actually enable it -- assume this *is* a parallel port */
-			outb(0x10, short_base+2);
-		}
-		return 0; /* the rest of the function only installs handlers */
-	}
-
-	if (short_irq >= 0) {
-		result = request_irq(short_irq, short_interrupt,
-				SA_INTERRUPT, "short", NULL);
-		if (result) {
-			printk(KERN_INFO "short: can't get assigned irq %i\n",
-					short_irq);
-			short_irq = -1;
-		}
-		else { /* actually enable it -- assume this *is* a parallel port */
-			outb(0x10,short_base+2);
-		}
-	}
-
-	/*
-	 * Ok, now change the interrupt handler if using top/bottom halves
-	 * has been requested
-	 */
-	if (short_irq >= 0 && (wq + tasklet) > 0) {
-		free_irq(short_irq,NULL);
-		result = request_irq(short_irq,
-				tasklet ? short_tl_interrupt :
-				short_wq_interrupt,
-				SA_INTERRUPT,"short-bh", NULL);
-		if (result) {
-			printk(KERN_INFO "short-bh: can't get assigned irq %i\n",
-					short_irq);
-			short_irq = -1;
-		}
-	}
-
-	return 0;
-}
-
-void short_cleanup(void)
-{
-	if (short_irq >= 0) {
-		outb(0x0, short_base + 2);   /* disable the interrupt */
-		if (!share) free_irq(short_irq, NULL);
-		else free_irq(short_irq, short_sh_interrupt);
-	}
-	/* Make sure we don't leave work queue/tasklet functions running */
-	if (tasklet)
-		tasklet_disable(&short_tasklet);
-	else
-		flush_scheduled_work();
-	unregister_chrdev(major, "short");
-	if (use_mem) {
-		iounmap((void __iomem *)short_base);
-		release_mem_region(short_base, SHORT_NR_PORTS);
-	} else {
-		release_region(short_base,SHORT_NR_PORTS);
-	}
-	if (short_buffer) free_page(short_buffer);
-}
-
-module_init(short_init);
-module_exit(short_cleanup);
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Nonoo");
+MODULE_DESCRIPTION("Example SPI driver by Nonoo (www.nonoo.hu)");
+MODULE_VERSION("1.0");

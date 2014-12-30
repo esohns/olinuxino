@@ -36,3 +36,10 @@ config.h.in
 configure
 Makefile.in
 build/
+Makefile.automake
+.deps/
+Makefile
+config.h
+config.log
+config.status
+stamp-h1

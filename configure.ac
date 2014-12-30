@@ -46,6 +46,7 @@ AC_SUBST(moduledir)
 AC_CONFIG_FILES([Makefile
                  src/Makefile
                  src/ko/Makefile
-		 src/test_u/Makefile])
+                 src/ko/3rd_party/Makefile
+                 src/ko/3rd_party/msp430/Makefile
+                 src/test_u/Makefile])
 AC_OUTPUT
-
