@@ -26,3 +26,13 @@
 *.exe
 *.out
 *.app
+
+aux_config/
+*~
+Makefile.in
+aclocal.m4
+autom4te.cache/
+config.h.in
+configure
+Makefile.in
+build/

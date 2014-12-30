@@ -1,0 +1,8 @@
+obj-m = $(module_DATA)
+MI_OBJS = $(module_DATA)
+
+ccflags-y = $(automake_dummy_CFLAGS)
+
+all clean:
+	mv Makefile.automake Makefile
+	$(MAKE) $@
