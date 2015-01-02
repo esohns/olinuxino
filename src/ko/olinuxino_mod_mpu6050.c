@@ -1,4 +1,4 @@
-/*  I2C kernel module driver for the Olimex MOD-MPU6050 UEXT module
+﻿/*  I2C kernel module driver for the Olimex MOD-MPU6050 UEXT module
     (see https://www.olimex.com/Products/Modules/Sensors/MOD-MPU6050/open-source-hardware,
          http://www.invensense.com/mems/gyro/mpu6050.html)
 
@@ -15,227 +15,106 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>. */
 
-#include <linux/init.h>
-#include <linux/module.h>
+#include "olinuxino_mod_mpu6050.h"
+
+// *NOTE*: taken from i2cdevlib (see also: http://www.i2cdevlib.com/devices/mpu6050#source)
+#include "MPU6050.h"
+
 #include <linux/device.h>
-#include <linux/kernel.h>
-#include <linux/interrupt.h>
-#include <linux/fs.h>
-#include <linux/kobject.h>
-#include <linux/sysfs.h>
-#include <linux/delay.h>
-#include <linux/spi/spi.h>
-#include <linux/random.h>
-#include <linux/irq.h>
 #include <linux/gpio.h>
-#include <linux/workqueue.h>
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/printk.h>
 #include <linux/sched.h>
-#include <linux/spinlock.h>
+#include <linux/sysfs.h>
 
-// example SPI device registers
-#define SOMEKINDOFRESETCOMMAND 0
-#define SOMEREG 0
-#define SPIDEVDATAREG 0
-
-// our interrupt name for the GPIO19 pin interrupt
-#define GPIO19_INT_NAME  "gpio19_int"
-
-// this is used to calculate device pin value from the GPIO pin value
-#define GPIO_TO_PIN(bank, gpio) (32 * (bank) + (gpio))
-
-// our two used GPIO pins
-#define BEAGLEBONE_GPIO19 GPIO_TO_PIN(3, 19)
-#define BEAGLEBONE_GPIO21 GPIO_TO_PIN(3, 21)
-
-// GPIO pins of the two used user LEDs
-#define BEAGLEBONE_USR3_LED GPIO_TO_PIN(1, 23)
-#define BEAGLEBONE_USR4_LED GPIO_TO_PIN(1, 24)
-
-// macros for turning the LEDs on and off
-#define BEAGLEBONE_LED3ON gpio_set_value(BEAGLEBONE_USR3_LED, 255)
-#define BEAGLEBONE_LED3OFF gpio_set_value(BEAGLEBONE_USR3_LED, 0)
-#define BEAGLEBONE_LED4ON gpio_set_value(BEAGLEBONE_USR4_LED, 255)
-#define BEAGLEBONE_LED4OFF gpio_set_value(BEAGLEBONE_USR4_LED, 0)
-
-// macros to check the values of the GPIO pins
-#define BEAGLEBONE_GPIO19_HIGH gpio_get_value(BEAGLEBONE_GPIO19)
-#define BEAGLEBONE_GPIO19_LOW (gpio_get_value(BEAGLEBONE_GPIO19) == 0)
-#define BEAGLEBONE_GPIO21_HIGH gpio_get_value(BEAGLEBONE_GPIO21)
-#define BEAGLEBONE_GPIO21_LOW (gpio_get_value(BEAGLEBONE_GPIO21) == 0)
-
-static struct kobject *spikernmodex_kobj; // this is used for the sysfs entries
-static struct spi_device *myspi;
-
-// this FIFO store is used for storing incoming data from the sysfs file
-// this stored data gets sent to the SPI device
-#define FIFOSTORESIZE 20
-#define FIFOSTOREDATASIZE 64
-typedef struct {
-  uint8_t data[FIFOSTOREDATASIZE];
-  int size;
-} fifostoreentry;
-static fifostoreentry fifostore[FIFOSTORESIZE];
-static int fifostorepos = 0;
-
-// this ringbuffer is used for storing incoming data from the SPI device
-// when the user reads the sysfs file, this ringbuffer's contents get printed out
-#define RINGBUFFERSIZE 20
-#define RINGBUFFERDATASIZE 64
-typedef struct {
-  int used;
-  int completed;
-  uint8_t data[RINGBUFFERDATASIZE];
-  int size;
-} ringbufferentry;
-static ringbufferentry ringbuffer[RINGBUFFERSIZE];
-static int ringbufferpos = 0;
-
-static struct workqueue_struct* spikernmodex_workqueue;
-static struct work_struct spikernmodex_work_processfifostore;
-static struct work_struct spikernmodex_work_read;
-
-// this spinlock is used for disabling interrupts while spi_sync() is running
-static DEFINE_SPINLOCK(spilock);
-static unsigned long spilockflags;
-
-// this function sends the register value "reg", then "val", then returns with a read byte
-// all SPI calls are implemented using spi_sync because the callback function given to
-// spi_async() didn't got called for me on the BeagleBone
-static uint8_t spi_write_reg(uint8_t reg, uint8_t val)
-{
-  struct spi_transfer t[3];
-  struct spi_message m;
-  uint8_t rxbuf;
-
-  spi_message_init(&m);
-
-  memset(t, 0, sizeof(t));
-
-  t[0].tx_buf = &reg;
-  t[0].len = 1;
-  spi_message_add_tail(&t[0], &m);
-
-  t[1].tx_buf = &val;
-  t[1].len = 1;
-  spi_message_add_tail(&t[1], &m);
-
-  t[2].rx_buf = &rxbuf;
-  t[2].len = 1;
-  spi_message_add_tail(&t[2], &m);
-
-  spin_lock_irqsave(&spilock, spilockflags);
-  spi_sync(myspi, &m);
-  spin_unlock_irqrestore(&spilock, spilockflags);
-
-  return rxbuf;
-}
-
-// this function writes "count" bytes from "buf" to the given "reg" register
-static void spi_write_reg_burst(uint8_t reg, const uint8_t *buf, size_t count)
-{
-  struct spi_transfer t[2];
-  struct spi_message m;
-
-  spi_message_init(&m);
-
-  memset(t, 0, sizeof(t));
-
-  t[0].tx_buf = &reg;
-  t[0].len = 1;
-  spi_message_add_tail(&t[0], &m);
-
-  t[1].tx_buf = buf;
-  t[1].len = count;
-  spi_message_add_tail(&t[1], &m);
-
-  spin_lock_irqsave(&spilock, spilockflags);
-  spi_sync(myspi, &m);
-  spin_unlock_irqrestore(&spilock, spilockflags);
-}
-
-// this function reads "count" bytes from the "reg" register to "dst"
-static uint8_t spi_read_reg_burst(uint8_t reg, uint8_t *dst, size_t count)
-{
-  struct spi_transfer t[2];
-  struct spi_message m;
-
-  spi_message_init(&m);
-
-  memset(t, 0, sizeof(t));
-
-  t[0].tx_buf = &reg;
-  t[0].len = 1;
-  spi_message_add_tail(&t[0], &m);
-
-  t[1].rx_buf = (uint8_t *)dst;
-  t[1].len = count;
-  spi_message_add_tail(&t[1], &m);
-
-  spin_lock_irqsave(&spilock, spilockflags);
-  spi_sync(myspi, &m);
-  spin_unlock_irqrestore(&spilock, spilockflags);
-
-  return 0;
-}
-
-// this wrapper function returns the value of register "reg"
-static uint8_t spi_read_reg(uint8_t reg)
-{
-  uint8_t res;
-
-  if (spi_read_reg_burst(reg, &res, 1) == 0)
-    return res;
-
-  return 0;
-}
-
-// thiw wrapper function executes the cmd command and returns with the value returned by the SPI device
-static uint8_t spi_cmd(uint8_t cmd)
-{
-  return spi_read_reg(cmd);
-}
-
+// *** sysfs ***
 // this function is called when writing to the "store" sysfs file
-static ssize_t spikernmodex_store_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
+static
+ssize_t
+i2c_mpu6050_store_store(struct kobject* kobj_in, struct kobj_attribute* attr_in, const char* buf_in, size_t count_in)
 {
-  if (count > FIFOSTOREDATASIZE) {
+  struct i2c_mpu6050_client_data_t* client_data_p = NULL;
+
+  // sanity check(s)
+//  struct device* device_p = kobj_to_dev(kobj_in);
+////  struct kobj_type* ktype = get_ktype(kobj_in);
+////  if (ktype == &device_ktype)
+////    device_p = to_dev(kobj_in);
+//  if (!device_p) {
+//    printk(KERN_ERR "%s: invalid parameter (not a device ?)\n", __func__);
+//    return -ENODEV;
+//  }
+//  struct i2c_client* client_p = to_i2c_client(device_p);
+  struct i2c_client* client_p = kobj_to_i2c_client(kobj_in);
+  if (!client_p) {
+    printk(KERN_ERR "%s: invalid parameter (not a I2C device ?)\n", __func__);
+    return -ENODEV;
+  }
+  client_data_p = (struct i2c_mpu6050_client_data_t*)i2c_get_clientdata(client_p);
+  if (!client_data_p) {
+    printk(KERN_ERR "unable to retrieve client state\n");
+    return -ENODEV;
+  }
+  if (count_in > FIFOSTOREDATASIZE) {
     printk(KERN_ERR "can't store data because it's too big.");
-    return 0;
+    return -ENODEV;
   }
-
-  if (fifostorepos >= FIFOSTORESIZE) {
-    printk(KERN_ERR "can't store data because fifo is full.");
-    return 0;
+  if (client_data_p->fifostorepos >= FIFOSTORESIZE) {
+    printk(KERN_ERR "can't store data because FIFO is full.");
+    return -ENODEV;
   }
+  printk(KERN_DEBUG "store_store(): storing %d bytes to store pos 0x%.2x\n", (int)count_in, client_data_p->fifostorepos);
 
-  printk(KERN_DEBUG "store_store(): storing %d bytes to store pos 0x%.2x\n", count, fifostorepos);
-
-  memcpy(fifostore[fifostorepos].data, buf, count);
-  fifostore[fifostorepos].size = count;
-  fifostorepos++;
+  memcpy(client_data_p->fifostore[client_data_p->fifostorepos].data, buf_in, count_in);
+  client_data_p->fifostore[client_data_p->fifostorepos].size = count_in;
+  client_data_p->fifostorepos++;
 
   printk(KERN_DEBUG "queueing work PROCESSFIFOSTORE\n");
-  queue_work(spikernmodex_workqueue, &spikernmodex_work_processfifostore);
+  queue_work(client_data_p->workqueue, &client_data_p->work_processfifostore.work);
 
-  return count;
+  return count_in;
 }
-
 // this function is called when reading from the "store" sysfs file
-static ssize_t spikernmodex_store_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+static
+ssize_t
+i2c_mpu6050_store_show(struct kobject* kobj_in, struct kobj_attribute* attr_in, char* buf_in)
 {
-  int currentbufsize;
-  int i = ringbufferpos+1;
+  struct i2c_mpu6050_client_data_t* client_data_p = NULL;
+  int i, currentbufsize = 0;
 
+  // sanity check(s)
+//  struct device* device_p = NULL;
+//  struct kobj_type* ktype = get_ktype(kobj_in);
+//  if (ktype == &device_ktype)
+//    device_p = to_dev(kobj_in);
+//  if (!device_p) {
+//    printk(KERN_ERR "%s: invalid parameter (not a device ?)\n", __func__);
+//    return -ENODEV;
+//  }
+//  struct i2c_client* client_p = to_i2c_client(device_p);
+  struct i2c_client* client_p = kobj_to_i2c_client(kobj_in);
+  if (!client_p) {
+    printk(KERN_ERR "%s: invalid parameter (not a I2C device ?)\n", __func__);
+    return -ENODEV;
+  }
+  client_data_p = (struct i2c_mpu6050_client_data_t*)i2c_get_clientdata(client_p);
+  if (!client_data_p) {
+    printk(KERN_ERR "unable to retrieve client state\n");
+    return -ENODEV;
+  }
+
+  i = client_data_p->ringbufferpos+1;
   if (i == RINGBUFFERSIZE)
     i = 0;
 
-  while (i != ringbufferpos) {
-    if (ringbuffer[i].completed) {
-      currentbufsize = ringbuffer[i].size;
+  while (i != client_data_p->ringbufferpos) {
+    if (client_data_p->ringbuffer[i].completed) {
+      currentbufsize = client_data_p->ringbuffer[i].size;
       // we found a used & completed slot, outputting
       printk(KERN_DEBUG "store_show(): outputting ringbuf %.2x, %d bytes\n", i, currentbufsize);
-      memcpy(buf, ringbuffer[i].data, currentbufsize);
-      ringbuffer[i].completed = ringbuffer[i].used = 0;
+      memcpy(buf_in, client_data_p->ringbuffer[i].data, currentbufsize);
+      client_data_p->ringbuffer[i].completed = client_data_p->ringbuffer[i].used = 0;
       return currentbufsize;
     }
 
@@ -244,128 +123,225 @@ static ssize_t spikernmodex_store_show(struct kobject *kobj, struct kobj_attribu
       i = 0;
   }
 
-    return 0;
+  return 0;
 }
 
-void spikernmodex_workqueue_handler(struct work_struct *work) {
+static
+void
+i2c_mpu6050_workqueue_fifo_handler(struct work_struct* work_in) {
+  struct fifo_work_t* work_p = NULL;
+  struct i2c_mpu6050_client_data_t* client_data_p = NULL;
   int i, j;
 
-  // this work outputs all data stored in the FIFO to the SPI device
-  if (work == &spikernmodex_work_processfifostore) {
-    printk(KERN_DEBUG "work PROCESSFIFOSTORE called\n");
+  // sanity check(s)
+  work_p = (struct fifo_work_t*)work_in;
+  if (!work_p) {
+    printk(KERN_ERR "unable to retrieve client state\n");
+    return;
+  }
+  client_data_p = (struct i2c_mpu6050_client_data_t*)i2c_get_clientdata(work_p->client);
+  if (!client_data_p) {
+    printk(KERN_ERR "unable to retrieve client state\n");
+    return;
+  }
 
-    while (fifostorepos > 0) { // processing all items in the fifo store
-      printk(KERN_DEBUG "%d entries in fifo store\n", fifostorepos);
+  printk(KERN_DEBUG "work PROCESSFIFOSTORE called\n");
 
-      printk(KERN_DEBUG "sending %d bytes\n", fifostore[0].size);
-      BEAGLEBONE_LED3ON;
-      spi_write_reg_burst(SPIDEVDATAREG, fifostore[0].data, fifostore[0].size);
-      BEAGLEBONE_LED3OFF;
+  while (client_data_p->fifostorepos > 0) { // processing all items in the fifo store
+    printk(KERN_DEBUG "%d entries in fifo store\n", client_data_p->fifostorepos);
 
-      // left shifting the FIFO store
-      for (i = 1; i < FIFOSTORESIZE; i++) {
-        for (j = 0; j < fifostore[i].size; j++)
-          fifostore[i-1].data[j] = fifostore[i].data[j];
-        fifostore[i-1].size = fifostore[i].size;
-      }
-      fifostorepos--;
+    printk(KERN_DEBUG "sending %d bytes\n", client_data_p->fifostore[0].size);
+    //      BEAGLEBONE_LED3ON;
+    //      spi_write_reg_burst(SPIDEVDATAREG, fifostore[0].data, fifostore[0].size);
+    //      BEAGLEBONE_LED3OFF;
+
+    // left shifting the FIFO store
+    for (i = 1; i < FIFOSTORESIZE; i++) {
+      for (j = 0; j < client_data_p->fifostore[i].size; j++)
+        client_data_p->fifostore[i-1].data[j] = client_data_p->fifostore[i].data[j];
+      client_data_p->fifostore[i-1].size = client_data_p->fifostore[i].size;
     }
+    client_data_p->fifostorepos--;
   }
 
-  // this work reads some data from the SPI device to the ringbuffer
-  if (work == &spikernmodex_work_read) {
-    printk(KERN_DEBUG "work READ called, ringbuf %.2x\n", ringbufferpos);
+  printk(KERN_DEBUG "work exit\n");
+}
+static
+void
+i2c_mpu6050_workqueue_read_handler(struct work_struct* work_in) {
+  struct fifo_work_t* work_p = NULL;
+  struct i2c_mpu6050_client_data_t* client_data_p = NULL;
 
-    memset(&ringbuffer[ringbufferpos].data, 0, RINGBUFFERDATASIZE);
-    ringbuffer[ringbufferpos].used = 1;
-
-    BEAGLEBONE_LED4ON;
-    spi_read_reg_burst(SPIDEVDATAREG, ringbuffer[ringbufferpos].data, RINGBUFFERDATASIZE);
-    ringbuffer[ringbufferpos].size = RINGBUFFERDATASIZE;
-    BEAGLEBONE_LED4ON;
-
-    printk(KERN_DEBUG "read stopped, ringbuf %.2x\n", ringbufferpos);
-    ringbuffer[ringbufferpos].completed = 1;
-
-    ringbufferpos++;
-    if (ringbufferpos == RINGBUFFERSIZE)
-      ringbufferpos = 0;
+  // sanity check(s)
+  work_p = (struct fifo_work_t*)work_in;
+  if (!work_p) {
+    printk(KERN_ERR "unable to retrieve client state\n");
+    return;
   }
+  client_data_p = (struct i2c_mpu6050_client_data_t*)i2c_get_clientdata(work_p->client);
+  if (!client_data_p) {
+    printk(KERN_ERR "unable to retrieve client state\n");
+    return;
+  }
+
+  printk(KERN_DEBUG "work READ called, ringbuf %.2x\n", client_data_p->ringbufferpos);
+
+  memset(&client_data_p->ringbuffer[client_data_p->ringbufferpos].data, 0, RINGBUFFERDATASIZE);
+  client_data_p->ringbuffer[client_data_p->ringbufferpos].used = 1;
+
+  BEAGLEBONE_LED4ON;
+  spi_read_reg_burst(SPIDEVDATAREG, client_data_p->ringbuffer[client_data_p->ringbufferpos].data, RINGBUFFERDATASIZE);
+  client_data_p->ringbuffer[client_data_p->ringbufferpos].size = RINGBUFFERDATASIZE;
+  BEAGLEBONE_LED4ON;
+  client_data_p->ringbuffer[client_data_p->ringbufferpos].size = 0;
+
+  printk(KERN_DEBUG "read stopped, ringbuf %.2x\n", client_data_p->ringbufferpos);
+  client_data_p->ringbuffer[client_data_p->ringbufferpos].completed = 1;
+
+  client_data_p->ringbufferpos++;
+  if (client_data_p->ringbufferpos == RINGBUFFERSIZE)
+    client_data_p->ringbufferpos = 0;
 
   printk(KERN_DEBUG "work exit\n");
 }
 
 // this function gets called when an interrupt happens for the registered GPIO pins
-irqreturn_t spikernmodex_interrupt_handler(int irq, void *dev_id)
+static
+irqreturn_t
+i2c_mpu6050_interrupt_handler(int irq_in, void* dev_id_in)
 {
+  struct device* device_p = NULL;
+  struct i2c_client* client_p = NULL;
+  struct i2c_mpu6050_client_data_t* client_data_p = NULL;
   enum { falling, rising } type;
 
-  printk(KERN_DEBUG "interrupt received (irq: %d)\n", irq);
+  // sanity check(s)
+  device_p = (struct device*)dev_id_in;
+  if (!device_p) {
+    printk(KERN_ERR "unable to retrieve client state\n");
+    return IRQ_NONE;
+  }
+  client_p = to_i2c_client(device_p);
+  if (!client_p) {
+    printk(KERN_ERR "unable to retrieve client state\n");
+    return IRQ_NONE;
+  }
+  client_data_p = (struct i2c_mpu6050_client_data_t*)i2c_get_clientdata(client_p);
+  if (!client_data_p) {
+    printk(KERN_ERR "unable to retrieve client state\n");
+    return IRQ_NONE;
+  }
 
-  if (irq == gpio_to_irq(BEAGLEBONE_GPIO19)) {
+  printk(KERN_DEBUG "interrupt received (irq: %d)\n", irq_in);
+
+  if (irq_in == client_p->irq) {
     type = BEAGLEBONE_GPIO19_LOW ? falling : rising;
 
     if (type == rising) {
       printk(KERN_DEBUG "rising GPIO19 interrupt received, queueing work READ\n");
-      queue_work(spikernmodex_workqueue, &spikernmodex_work_read);
+      queue_work(client_data_p->workqueue, &client_data_p->work_read.work);
       return IRQ_HANDLED;
     }
   }
 
-  return IRQ_HANDLED;
+  return IRQ_NONE;
 }
 
-static void spikernmodex_clearringbuffer(void)
+static
+void
+i2c_mpu6050_clearringbuffer(void* data_in)
 {
+  struct i2c_mpu6050_client_data_t* client_data_p = NULL;
   int i;
 
+  // sanity check(s)
+  client_data_p = (struct i2c_mpu6050_client_data_t*)data_in;
+  if (!client_data_p) {
+    printk(KERN_ERR "unable to retrieve client state\n");
+    return;
+  }
+
   for (i = 0; i < RINGBUFFERSIZE; i++)
-    ringbuffer[i].completed = ringbuffer[i].used = 0;
+    client_data_p->ringbuffer[i].completed = client_data_p->ringbuffer[i].used = 0;
 }
 
 // this functions gets called when the user reads the sysfs file "somereg"
-static ssize_t spikernmodex_somereg_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+static
+ssize_t
+i2c_mpu6050_somereg_show(struct kobject* kobj_in, struct kobj_attribute* attr_in, char* buf_in)
 {
   // outputting the value of register "SOMEREG"
-  return sprintf(buf, "%x\n", spi_read_reg(SOMEREG));
+  return sprintf(buf_in, "%x\n", spi_read_reg(SOMEREG));
 }
 
 // this function gets called when the user writes the sysfs file "somereg"
-static ssize_t spikernmodex_somereg_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
+static
+ssize_t
+i2c_mpu6050_somereg_store(struct kobject* kobj_in, struct kobj_attribute* attr_in, const char* buf_in, size_t count_in)
 {
   unsigned int val;
-  sscanf(buf, "%x", &val);
+  sscanf(buf_in, "%x", &val);
   spi_write_reg(SOMEREG, (uint8_t)val);
   printk(KERN_DEBUG "stored %.2x to register SOMEREG\n", (uint8_t)val);
-  return count;
+  return count_in;
 }
 
 // this function gets called when the user writes the sysfs file "clearringbuffer"
-static ssize_t spikernmodex_clearringbuffer_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
+static
+ssize_t
+i2c_mpu6050_clearringbuffer_store(struct kobject* kobj_in, struct kobj_attribute* attr_in, const char* buf_in, size_t count_in)
 {
-  spikernmodex_clearringbuffer();
+  struct i2c_mpu6050_client_data_t* client_data_p = NULL;
+
+  // sanity check(s)
+//  struct device* device_p = kobj_to_dev(kobj_in);
+////  struct kobj_type* ktype = get_ktype(kobj_in);
+////  if (ktype == &device_ktype)
+////    device_p = to_dev(kobj_in);
+//  if (!device_p) {
+//    printk(KERN_ERR "%s: invalid parameter (not a device ?)\n", __func__);
+//    return -ENODEV;
+//  }
+//  struct i2c_client* client_p = to_i2c_client(device_p);
+  struct i2c_client* client_p = kobj_to_i2c_client(kobj_in);
+  if (!client_p) {
+    printk(KERN_ERR "%s: invalid parameter (not a I2C device ?)\n", __func__);
+    return -ENODEV;
+  }
+  client_data_p = (struct i2c_mpu6050_client_data_t*)i2c_get_clientdata(client_p);
+  if (!client_data_p) {
+    printk(KERN_ERR "unable to retrieve client state\n");
+    return -ENODEV;
+  }
+
+  i2c_mpu6050_clearringbuffer(client_data_p);
+
   printk(KERN_DEBUG "ringbuffer cleared.\n");
-  return count;
+
+  return count_in;
 }
 
 // these two functions are called when the user reads the sysfs files "gpio19state" and "gpio21state"
-static ssize_t spikernmodex_gpio19state_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+static
+ssize_t
+i2c_mpu6050_gpio19state_show(struct kobject* kobj_in, struct kobj_attribute* attr_in, char* buf_in)
 {
-  return sprintf(buf, "%d\n", (BEAGLEBONE_GPIO19_LOW ? 0 : 1));
+  return sprintf(buf_in, "%d\n", (BEAGLEBONE_GPIO19_LOW ? 0 : 1));
 }
-static ssize_t spikernmodex_gpio21state_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+static
+ssize_t
+i2c_mpu6050_gpio21state_show(struct kobject* kobj_in, struct kobj_attribute* attr_in, char* buf_in)
 {
-  return sprintf(buf, "%d\n", (BEAGLEBONE_GPIO21_LOW ? 0 : 1));
+  return sprintf(buf_in, "%d\n", (BEAGLEBONE_GPIO21_LOW ? 0 : 1));
 }
 
-static struct kobj_attribute store_attribute = __ATTR(data, 0666, spikernmodex_store_show, spikernmodex_store_store);
-static struct kobj_attribute somereg_attribute = __ATTR(addr, 0666, spikernmodex_somereg_show, spikernmodex_somereg_store);
-static struct kobj_attribute clearringbuffer_attribute = __ATTR(clearringbuffer, 0666, NULL, spikernmodex_clearringbuffer_store);
-static struct kobj_attribute gpio19state_attribute = __ATTR(gpio19state, 0666, spikernmodex_gpio19state_show, NULL);
-static struct kobj_attribute gpio21state_attribute = __ATTR(gpio21state, 0666, spikernmodex_gpio21state_show, NULL);
-
+static struct kobj_attribute store_attribute = __ATTR(data, 0666, i2c_mpu6050_store_show, i2c_mpu6050_store_store);
+static struct kobj_attribute somereg_attribute = __ATTR(addr, 0666, i2c_mpu6050_somereg_show, i2c_mpu6050_somereg_store);
+static struct kobj_attribute clearringbuffer_attribute = __ATTR(clearringbuffer, 0666, NULL, i2c_mpu6050_clearringbuffer_store);
+static struct kobj_attribute gpio19state_attribute = __ATTR(gpio19state, 0666, i2c_mpu6050_gpio19state_show, NULL);
+static struct kobj_attribute gpio21state_attribute = __ATTR(gpio21state, 0666, i2c_mpu6050_gpio21state_show, NULL);
 // a group of attributes so that we can create and destroy them all at once
-static struct attribute *attrs[] = {
+static struct attribute* attrs[] = {
   &store_attribute.attr,
   &somereg_attribute.attr,
   &clearringbuffer_attribute.attr,
@@ -373,7 +349,6 @@ static struct attribute *attrs[] = {
   &gpio21state_attribute.attr,
   NULL, // need to NULL terminate the list of attributes
 };
-
 /* An unnamed attribute group will put all of the attributes directly in
  * the kobject directory.  If we specify a name, a subdirectory will be
  * created for the attributes with the directory being the name of the
@@ -381,121 +356,310 @@ static struct attribute *attrs[] = {
  */
 static struct attribute_group attr_group = { .attrs = attrs };
 
-static int __devinit spikernmodex_probe(struct spi_device *spi); // prototype
-static int spikernmodex_remove(struct spi_device *spi); // prototype
-
-// this is the spi driver structure which has the driver name and the two
-// functions to call when probing and removing
-static struct spi_driver spikernmodex_driver = {
-  .driver = {
-    .name = "spikernmodex", // be sure to match this with the spi_board_info modalias in arch/am/mach-omap2/board-am335xevm.c
-    .owner = THIS_MODULE
-  },
-  .probe = spikernmodex_probe,
-    .remove = __devexit_p(spikernmodex_remove)
+// driver structure
+// *NOTE*: see https://www.kernel.org/doc/Documentation/i2c/writing-clients
+static struct i2c_device_id i2c_mpu6050_idtable[] = {
+  { "mpu6050", 0 },
+  { }
 };
+MODULE_DEVICE_TABLE(i2c, i2c_mpu6050_idtable);
+
+static struct dev_pm_ops i2c_mpu6050_pm_ops = {
+  .prepare = i2c_mpu6050_pm_prepare,
+  .complete = i2c_mpu6050_pm_complete,
+  .suspend = i2c_mpu6050_pm_suspend,
+  .resume = i2c_mpu6050_pm_resume,
+  .freeze = i2c_mpu6050_pm_freeze,
+  .thaw = i2c_mpu6050_pm_thaw,
+  .poweroff = i2c_mpu6050_pm_poweroff,
+  .restore = i2c_mpu6050_pm_restore,
+  .suspend_late = i2c_mpu6050_pm_suspend_late,
+  .resume_early = i2c_mpu6050_pm_resume_early,
+  .freeze_late = i2c_mpu6050_pm_freeze_late,
+  .thaw_early = i2c_mpu6050_pm_thaw_early,
+  .poweroff_late = i2c_mpu6050_pm_poweroff_late,
+  .restore_early = i2c_mpu6050_pm_restore_early,
+  .suspend_noirq = i2c_mpu6050_pm_suspend_noirq,
+  .resume_noirq = i2c_mpu6050_pm_resume_noirq,
+  .freeze_noirq = i2c_mpu6050_pm_freeze_noirq,
+  .thaw_noirq = i2c_mpu6050_pm_thaw_noirq,
+  .poweroff_noirq = i2c_mpu6050_pm_poweroff_noirq,
+  .restore_noirq = i2c_mpu6050_pm_restore_noirq,
+  .runtime_suspend = i2c_mpu6050_pm_runtime_suspend,
+  .runtime_resume = i2c_mpu6050_pm_runtime_resume,
+  .runtime_idle = i2c_mpu6050_pm_runtime_idle
+};
+static struct i2c_driver i2c_mpu6050_driver = {
+  .class = I2C_CLASS_HWMON,
+
+  /* notifies the driver that a new bus has appeared.
+     *NOTE*: avoid using this, it will be removed in a
+     near future. */
+  .attach_adapter = i2c_mpu6050_attach_adapter,
+
+  /* standard driver model interfaces */
+  .probe		= i2c_mpu6050_probe,
+  .remove		= __devexit_p(i2c_mpu6050_remove),
+
+  /* driver model interfaces that don't relate to enumeration */
+  .shutdown	= i2c_mpu6050_shutdown,
+  .suspend	= i2c_mpu6050_suspend,
+  .resume	= i2c_mpu6050_resume,
+
+  /* alert callback, for example for the SMBus alert protocol.
+     The format and meaning of the data value depends on the protocol.
+     For the SMBus alert protocol, there is a single bit of data passed
+     as the alert response's low bit ("event flag"). */
+  .alert = i2c_mpu6050_alert,
+
+  /* a ioctl like command that can be used to perform specific functions
+     with the device. */
+  .command = i2c_mpu6050_command,
+
+  .driver = {
+    .name	= "mpu6050", // be sure to match this with any aliased 'i2c_board_info's
+//    .bus = ,
+    .owner = THIS_MODULE,
+//    .mod_name = ,
+//    .suppress_bind_attrs = ,
+//    .of_device_id = ,
+//    .acpi_device_id = ,
+//    .probe = ,
+//    .remove = ,
+//    .shutdown = ,
+//    .suspend = ,
+//    .resume = ,
+    .attribute_group = attr_group,
+    .pm	= &i2c_mpu6050_pm_ops,
+//    .p = ,
+  },
+  .id_table	= i2c_mpu6050_idtable,
+
+  /* device detection callback for automatic device creation */
+  .detect		= i2c_mpu6050_detect,
+  .address_list	= normal_i2c,
+  .clients =
+}
+//module_i2c_driver(i2c_mpu6050_driver);
 
 // this function gets called when a matching modalias and driver name found
-static int __devinit spikernmodex_probe(struct spi_device *spi)
+static int __devinit i2c_mpu6050_probe(struct i2c_client* client_in,
+                                       const struct i2c_device_id* id_in)
 {
-  int err;
+  printk(KERN_DEBUG "i2c_mpu6050_probe() called.\n");
 
-  printk(KERN_DEBUG "spikernmodex_probe() called.\n");
+  // sanity check(s)
+  if (!i2c_check_functionality(client_in->adapter,
+                               (I2C_FUNC_SMBUS_BYTE_DATA |
+                                I2C_FUNC_SMBUS_WORD_DATA |
+                                I2C_FUNC_SMBUS_I2C_BLOCK))) {
+    printk(KERN_ERR "%s: needed i2c functionality is not supported\n", __func__);
+    return -ENODEV;
+  }
+  int err = gpio_is_valid(SUNXI_GPIO(GPIO_UEXT4_UART4RX_PG11_10_NAME));
+  if (err) {
+    printk(KERN_ERR "%s: invalid GPIO\n", GPIO_UEXT4_UART4RX_PG11_10_NAME);
+    return -ENOSYS;
+  }
 
-  spikernmodex_kobj = kobject_create_and_add("spikernmodex", kernel_kobj);
-  if (!spikernmodex_kobj) {
+  struct i2c_mpu6050_client_data* client_data_p = kzalloc(sizeof(struct i2c_mpu6050_client_data), GFP_KERNEL);
+  if (!client_data_p) {
+    printk(KERN_ERR "%s: no memory\n", __func__);
+    return -ENOMEM;
+  }
+  i2c_set_clientdata(client_in, client_data_p);
+
+  client_data_p->client = client_in;
+  client_data_p->object = kobject_create_and_add("i2c_mpu6050", kernel_kobj);
+  if (!client_data_p->object) {
     printk(KERN_ERR "unable to create sysfs object\n");
+
+    // clean up
+    kfree(client_data_p);
+
     return -ENOMEM;
   }
-
   // create the files associated with this kobject
-  err = sysfs_create_group(spikernmodex_kobj, &attr_group);
+  err = sysfs_create_group(client_data_p->object, &attr_group);
   if (err) {
-    kobject_put(spikernmodex_kobj);
     printk(KERN_ERR "unable to create sysfs files\n");
+
+    // clean up
+    kobject_unregister(client_data_p->object);
+    kfree(client_data_p);
+
     return -ENOMEM;
   }
+  // *TODO*: announce new sysfs object
+//  err = kobject_uevent(client_data_p->object, enum kobject_action action);
+//  if (err) {
+//    printk(KERN_ERR "unable to announce sysfs files\n");
 
-  // initalizing SPI interface
-  myspi = spi;
-  myspi->max_speed_hz = 5000000; // get this from your SPI device's datasheet
-  spi_setup(myspi);
+//    // clean up
+//    kobject_unregister(client_data_p->object);
+//    kfree(client_data_p);
 
-  // initializing device
-  spi_cmd(SOMEKINDOFRESETCOMMAND);
-  mdelay(100);
+//    return -ENOMEM;
+//  }
+  client_data_p->workqueue = create_singlethread_workqueue("i2c_mpu6050_workqueue");
+  if (!client_data_p->workqueue) {
+    printk(KERN_ERR "unable to create workqueue\n");
 
-  // initializing workqueue
-  spikernmodex_workqueue = create_singlethread_workqueue("spikernmodex_workqueue");
-  INIT_WORK(&spikernmodex_work_processfifostore, spikernmodex_workqueue_handler);
-  INIT_WORK(&spikernmodex_work_read, spikernmodex_workqueue_handler);
+    // clean up
+    kobject_unregister(client_data_p->object);
+    kfree(client_data_p);
 
-  // initializing interrupt for GPIO19
-  // we need to set the interrupt for both falling and rising trigger as the (dynamically configurable) GPIO function can be triggered on both edges
-  err = request_irq(gpio_to_irq(BEAGLEBONE_GPIO19), spikernmodex_interrupt_handler, IRQF_TRIGGER_FALLING|IRQF_TRIGGER_RISING, GPIO19_INT_NAME, NULL);
+    return -ENOMEM;
+  }
+  INIT_WORK(&client_data_p->work_processfifostore.work, i2c_mpu6050_workqueue_fifo_handler);
+  client_data_p->work_fifo.client = client_data_p->client;
+  INIT_WORK(&client_data_p->work_read.work, i2c_mpu6050_workqueue_read_handler);
+  client_data_p->work_read.client = client_data_p->client;
+  i2c_mpu6050_clearringbuffer(client_data_p);
+  __SPIN_LOCK_INITIALIZER(client_data_p->sync_lock);
+
+  // initialize interrupt for GPIO INT line
+  err = gpio_request_one(SUNXI_GPIO(GPIO_UEXT4_UART4RX_PG11_10_NAME),
+                         GPIOF_DIR_IN,
+                         GPIO_UEXT4_UART4RX_PG11_10_NAME);
   if (err) {
-    printk(KERN_ERR "request IRQ error: GPIO19 already claimed or allocation failed!\n");
-    return(-EIO);
+    printk(KERN_ERR "%s: unable to request GPIO\n", GPIO_UEXT4_UART4RX_PG11_10_NAME);
+
+    // clean up
+    destroy_workqueue(client_data_p->workqueue);
+    kobject_unregister(client_data_p->object);
+    kfree(client_data_p);
+
+    return -EIO;
+  }
+  // export GPIO to userspace
+  err = gpio_export(SUNXI_GPIO(GPIO_UEXT4_UART4RX_PG11_10_NAME),
+                    false);
+  if (err) {
+    printk(KERN_ERR "%s: unable to export GPIO\n", GPIO_UEXT4_UART4RX_PG11_10_NAME);
+
+    // clean up
+    gpio_free(SUNXI_GPIO(GPIO_UEXT4_UART4RX_PG11_10_NAME));
+    destroy_workqueue(client_data_p->workqueue);
+    kobject_unregister(client_data_p->object);
+    kfree(client_data_p);
+
+    return -EIO;
+  }
+  err = gpio_export_link(client_data_p->client.dev,
+                         GPIO_UEXT4_UART4RX_PG11_10_NAME,
+                         SUNXI_GPIO(GPIO_UEXT4_UART4RX_PG11_10_NAME));
+  if (err) {
+    printk(KERN_ERR "%s: unable to export GPIO\n", GPIO_UEXT4_UART4RX_PG11_10_NAME);
+
+    // clean up
+    gpio_unexport(SUNXI_GPIO(GPIO_UEXT4_UART4RX_PG11_10_NAME));
+    gpio_free(SUNXI_GPIO(GPIO_UEXT4_UART4RX_PG11_10_NAME));
+    destroy_workqueue(client_data_p->workqueue);
+    kobject_unregister(client_data_p->object);
+    kfree(client_data_p);
+
+    return -EIO;
+  }
+  client_data_p->client.irq = gpio_to_irq(SUNXI_GPIO(GPIO_UEXT4_UART4RX_PG11_10_NAME));
+  if (client_data_p->client.irq < 0) {
+    printk(KERN_ERR "%s: unable to request GPIO IRQ\n", GPIO_UEXT4_UART4RX_PG11_10_NAME);
+
+    // clean up
+    gpio_unexport(SUNXI_GPIO(GPIO_UEXT4_UART4RX_PG11_10_NAME));
+    gpio_free(SUNXI_GPIO(GPIO_UEXT4_UART4RX_PG11_10_NAME));
+    destroy_workqueue(client_data_p->workqueue);
+    kobject_unregister(client_data_p->object);
+    kfree(client_data_p);
+
+    return -EIO;
+  }
+  printk(KERN_INFO "%s: GPIO %d --> IRQ %d\n",
+         GPIO_UEXT4_UART4RX_PG11_10_NAME,
+         SUNXI_GPIO(GPIO_UEXT4_UART4RX_PG11_10_NAME),
+         client_data_p->client.irq);
+  err = request_irq(client_data_p->client.irq,
+                    i2c_mpu6050_interrupt_handler,
+                    SA_INTERRUPT | IRQF_TRIGGER_RISING,
+                    GPIO_UEXT4_UART4RX_PG11_10_NAME,
+                    &(client_data_p->client.dev));
+  if (err) {
+    printk(KERN_ERR "unable to request IRQ: %d already claimed or allocation failed\n", client_data_p->client.irq);
+
+    // clean up
+    gpio_unexport(SUNXI_GPIO(GPIO_UEXT4_UART4RX_PG11_10_NAME));
+    gpio_free(SUNXI_GPIO(GPIO_UEXT4_UART4RX_PG11_10_NAME));
+    destroy_workqueue(client_data_p->workqueue);
+    kobject_unregister(client_data_p->object);
+    kfree(client_data_p);
+
+    return -EIO;
   }
 
-  spikernmodex_clearringbuffer();
-
-  printk(KERN_INFO "Example SPI driver by Nonoo (www.nonoo.hu) loaded.\n");
-
-  return err;
+  return 0;
 }
-
 // this function gets called when our example SPI driver gets removed with spi_unregister_driver()
-static int spikernmodex_remove(struct spi_device *spi)
+static int i2c_mpu6050_remove(struct i2c_client* client_in)
 {
-  printk(KERN_DEBUG "spikernmodex_remove() called.\n");
+  struct i2c_mpu6050_client_data_t* client_data_p = NULL;
 
-  // freeing used interrupts
-  free_irq(gpio_to_irq(BEAGLEBONE_GPIO19), NULL);
+  printk(KERN_DEBUG "i2c_mpu6050_remove() called.\n");
 
-  // resetting device
-  spi_cmd(SOMEKINDOFRESETCOMMAND);
+  client_data_p = (struct i2c_mpu6050_client_data_t*)i2c_get_clientdata(client_in);
+  if (!client_data_p) {
+    printk(KERN_ERR "unable to retrieve client state\n");
+    return -ENODEV;
+  }
 
-  // destroying the sysfs structure
-  kobject_put(spikernmodex_kobj);
-
-  // destroying the workqueue
-  flush_workqueue(spikernmodex_workqueue);
-  destroy_workqueue(spikernmodex_workqueue);
+  // clean up
+  free_irq(client_data_p->client->irq, NULL);
+  gpio_unexport(SUNXI_GPIO(GPIO_UEXT4_UART4RX_PG11_10_NAME));
+  gpio_free(SUNXI_GPIO(GPIO_UEXT4_UART4RX_PG11_10_NAME));
+  flush_workqueue(client_data_p->workqueue);
+  destroy_workqueue(client_data_p->workqueue);
+  kobject_unregister(client_data_p->object);
+  kfree(client_data_p);
 
   return 0;
 }
 
 // this gets called on module init
-static int __init spikernmodex_init(void)
+static int __init i2c_mpu6050_init(void)
 {
-  int error;
+  char buffer[BUFSIZ];
 
-  printk(KERN_INFO "Loading example SPI driver by Nonoo (www.nonoo.hu)...\n");
-
-  // registering SPI driver, this will call spikernmodex_probe()
-  error = spi_register_driver(&spikernmodex_driver);
+  // registering I2C driver, this will call i2c_mpu6050_probe()
+  int error = i2c_add_driver(&i2c_mpu6050_driver);
   if (error < 0) {
-    printk(KERN_ERR "spi_register_driver() failed %d\n", error);
+    printk(KERN_ERR "i2c_add_driver() failed %d\n", error);
     return error;
   }
 
+  memset(&buffer, 0, sizeof(buffer));
+  strcpy(&buffer, KO_OLIMEX_MOD_MPU6050_DESCRIPTION);
+  strcpy(&buffer + sizeof(KO_OLIMEX_MOD_MPU6050_DESCRIPTION), "...added\n");
+  printk(KERN_INFO buffer);
+
   return 0;
 }
-
-// this gets called when module is getting unloaded
-static void __exit spikernmodex_exit(void)
+// this gets called when module is being unloaded
+static void __exit i2c_mpu6050_exit(void)
 {
-  // unregistering SPI driver, this will call cc1101_remove()
-  spi_unregister_driver(&spikernmodex_driver);
-  printk(KERN_INFO "Example SPI driver by Nonoo (www.nonoo.hu) removed.\n");
+  char buffer[BUFSIZ];
+
+  // unregistering I2C driver, this will call i2c_mpu6050_remove()
+  i2c_del_driver(&i2c_mpu6050_driver);
+
+  memset(&buffer, 0, sizeof(buffer));
+  strcpy(&buffer, KO_OLIMEX_MOD_MPU6050_DESCRIPTION);
+  strcpy(&buffer + sizeof(KO_OLIMEX_MOD_MPU6050_DESCRIPTION), "...removed\n");
+  printk(KERN_INFO buffer);
 }
-
 // setting which function to call on module init and exit
-module_init(spikernmodex_init);
-module_exit(spikernmodex_exit);
+module_init(i2c_mpu6050_init);
+module_exit(i2c_mpu6050_exit);
 
-MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Nonoo");
-MODULE_DESCRIPTION("Example SPI driver by Nonoo (www.nonoo.hu)");
-MODULE_VERSION("1.0");
+MODULE_LICENSE(KO_OLIMEX_MOD_MPU6050_LICENSE);
+MODULE_AUTHOR(KO_OLIMEX_MOD_MPU6050_AUTHOR);
+MODULE_VERSION(KO_OLIMEX_MOD_MPU6050_VERSION);
+MODULE_DESCRIPTION(KO_OLIMEX_MOD_MPU6050_DESCRIPTION);

@@ -37,16 +37,16 @@ AC_TYPE_SSIZE_T
 AC_PATH_KERNEL_SOURCE
 default_moduledir=/lib/modules/`uname -r`/misc
 AC_ARG_WITH(moduledir,
-	    [  --with-moduledir=DIR    kernel modules in DIR (/lib/modules/`uname -r`/misc)],
-	    moduledir=${withval},
-	    moduledir=${default_moduledir}
-)
+            [  --with-moduledir=DIR    kernel modules in DIR (/lib/modules/`uname -r`/misc)],
+            moduledir=${withval},
+            moduledir=${default_moduledir})
 AC_SUBST(moduledir)
 
 AC_CONFIG_FILES([Makefile
                  src/Makefile
                  src/ko/Makefile
                  src/ko/3rd_party/Makefile
+                 src/ko/3rd_party/i2cdevlib/Makefile
                  src/ko/3rd_party/msp430/Makefile
                  src/test_u/Makefile])
 AC_OUTPUT

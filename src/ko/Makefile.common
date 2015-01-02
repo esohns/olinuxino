@@ -1,6 +1,6 @@
 #moduledir = @moduledir@
-#KERNEL_LOCATION = @kerneldir@
-KERNEL_LOCATION = /lib/modules/$(shell uname -r)/build
+KERNEL_LOCATION = @kerneldir@
+#KERNEL_LOCATION = /lib/modules/$(shell uname -r)/build
 KBUILD_VERBOSE = 1
 #MOD_DEVDIR = $(PWD)
 
