@@ -15,6 +15,9 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>. */
 
+#include <asm/types.h>
+
+#include <linux/pinctrl/consumer.h>
 #include <linux/i2c.h>
 #include <linux/interrupt.h>
 #include <linux/kobject.h>
@@ -22,13 +25,19 @@
 #include <linux/types.h>
 #include <linux/workqueue.h>
 
+#include <plat/sys_config.h>
+
 // defines
 #define KO_OLIMEX_MOD_MPU6050_LICENSE     "GPL";
 #define KO_OLIMEX_MOD_MPU6050_AUTHOR      "Erik Sohns";
 #define KO_OLIMEX_MOD_MPU6050_VERSION     "0.1";
 #define KO_OLIMEX_MOD_MPU6050_DESCRIPTION "I2C kernel module driver for the Olimex MOD-MPU6050 UEXT module"
 
-#define GPIO_UEXT4_UART4RX_PG11_10_NAME   "gpio_pin_10"
+// *NOTE*: check the .fex file (bin2fex of script.bin) in the device boot partition
+#define GPIO_UEXT4_UART4RX_PG11_PIN       10
+#define GPIO_UEXT4_UART4RX_PG11_LABEL     "gpio_pin_10"
+#define GPIO_LED_PH02_PIN                 20
+#define GPIO_LED_PH02_LABEL               "gpio_pin_20"
 
 #define FIFOSTORESIZE                     20
 #define FIFOSTOREDATASIZE                 64
@@ -58,6 +67,11 @@ struct fifo_work_t {
 };
 
 struct i2c_mpu6050_client_data_t {
+  struct pinctrl* pin_ctrl;
+  struct pinctrl_state* pin_ctrl_state;
+  script_gpio_set_t gpio_int_data;
+  script_gpio_set_t gpio_led_data;
+  unsigned gpio_led_handle;
   struct i2c_client* client;
   struct kobject* object; // used for the sysfs entries
   struct workqueue_struct* workqueue;

@@ -27,6 +27,9 @@
 *.out
 *.app
 
+# MSVC project files
+*.sdf
+
 aux_config/
 *~
 Makefile.in

@@ -2,7 +2,8 @@ SUBDIRS = \
   3rd_party
 
 AM_CPPFLAGS = \
-  -I@kerneldir@
+  -I@kerneldir@ \
+  -I@kerneldir@/arch/arm/plat-sunxi/include
 
 EXTRA_DIST = Makefile.kernel Makefile.common
 EXTRA_PROGRAMS = automake_dummy
