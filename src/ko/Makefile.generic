@@ -1,6 +1,6 @@
-obj-m += olinuxino_mod_mpu6050.o
+obj-m += olimex_mod_mpu6050.o
 
-#CFLAGS_olinuxino_mod_mpu6050.o =
+#CFLAGS_olimex_mod_mpu6050.o =
 #ccflags-y =
 
 all:

@@ -1,4 +1,4 @@
-﻿/*  I2C kernel module driver for the Olimex MOD-MPU6050 UEXT module
+/*  I2C kernel module driver for the Olimex MOD-MPU6050 UEXT module
     (see https://www.olimex.com/Products/Modules/Sensors/MOD-MPU6050/open-source-hardware,
          http://www.invensense.com/mems/gyro/mpu6050.html)
 
@@ -15,17 +15,21 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>. */
 
-#include "olinuxino_mod_mpu6050.h"
+#include "olimex_mod_mpu6050.h"
 
 // *NOTE*: taken from i2cdevlib (see also: http://www.i2cdevlib.com/devices/mpu6050#source)
 #include "MPU6050.h"
 
 #include <linux/device.h>
 #include <linux/gpio.h>
+#include <linux/irq.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/pinctrl/consumer.h>
 #include <linux/printk.h>
+#include <linux/regmap.h>
 #include <linux/sched.h>
+#include <linux/slab.h>
 #include <linux/sysfs.h>
 
 // *** sysfs ***
@@ -131,6 +135,7 @@ i2c_mpu6050_store_show(struct kobject* kobj_in,
   return 0;
 }
 
+// *** workqueue ***
 static
 void
 i2c_mpu6050_workqueue_fifo_handler(struct work_struct* work_in) {
@@ -219,7 +224,7 @@ i2c_mpu6050_workqueue_read_handler(struct work_struct* work_in) {
   printk(KERN_DEBUG "work exit\n");
 }
 
-// this function gets called when an interrupt happens for the registered GPIO pins
+// *** irq handler ***
 static
 irqreturn_t
 i2c_mpu6050_interrupt_handler(int irq_in,
@@ -308,8 +313,7 @@ static
 ssize_t
 i2c_mpu6050_reg_store(struct kobject* kobj_in,
                       struct kobj_attribute* attr_in,
-                      const char* buf_in,
-                      size_t count_in)
+                      const char* buf_in, size_t count_in)
 {
   unsigned int reg, val;
   struct i2c_client* client_p = kobj_to_i2c_client(kobj_in);
@@ -330,8 +334,7 @@ static
 ssize_t
 i2c_mpu6050_clearringbuffer_store(struct kobject* kobj_in,
                                   struct kobj_attribute* attr_in,
-                                  const char* buf_in,
-                                  size_t count_in)
+                                  const char* buf_in, size_t count_in)
 {
   struct i2c_mpu6050_client_data_t* client_data_p = NULL;
 
@@ -370,13 +373,24 @@ i2c_mpu6050_intstate_show(struct kobject* kobj_in,
                           struct kobj_attribute* attr_in,
                           char* buf_in)
 {
-  struct i2c_client* client_p = kobj_to_i2c_client(kobj_in);
+  struct i2c_client* client_p;
+  int gpio;
+  
+  client_p = kobj_to_i2c_client(kobj_in);
   if (!client_p) {
     printk(KERN_ERR "%s: invalid parameter (not a I2C device ?)\n", __func__);
     return -ENODEV;
   }
+//  gpio = irq_to_gpio(client_p->irq);
+  gpio = GPIO_UEXT4_UART4RX_PG11_PIN;
+  if (gpio < 0) {
+    printk(KERN_ERR "%s: irq_to_gpio(%d) failed\n",
+           __func__,
+           client_p->irq);
+    return -ENODEV;
+  }
 
-  return sprintf(buf_in, "%d\n", gpio_get_value(irq_to_gpio(client_p->irq)));
+  return sprintf(buf_in, "%d\n", gpio_get_value(gpio));
 }
 static
 ssize_t
@@ -399,119 +413,234 @@ i2c_mpu6050_ledstate_show(struct kobject* kobj_in,
   return sprintf(buf_in, "%d\n", gpio_read_one_pin_value(client_data_p->gpio_led_handle, GPIO_LED_PH02_LABEL));
 }
 
-static struct kobj_attribute store_attribute = __ATTR(data, 0666, i2c_mpu6050_store_show, i2c_mpu6050_store_store);
-static struct kobj_attribute somereg_attribute = __ATTR(addr, 0666, i2c_mpu6050_somereg_show, i2c_mpu6050_somereg_store);
+static struct kobj_attribute store_attribute =           __ATTR(data, 0666, i2c_mpu6050_store_show, i2c_mpu6050_store_store);
+static struct kobj_attribute reg_attribute =             __ATTR(addr, 0666, i2c_mpu6050_reg_show, i2c_mpu6050_reg_store);
 static struct kobj_attribute clearringbuffer_attribute = __ATTR(clearringbuffer, 0666, NULL, i2c_mpu6050_clearringbuffer_store);
-static struct kobj_attribute gpio19state_attribute = __ATTR(gpio19state, 0666, i2c_mpu6050_gpio19state_show, NULL);
-static struct kobj_attribute gpio21state_attribute = __ATTR(gpio21state, 0666, i2c_mpu6050_gpio21state_show, NULL);
-// a group of attributes so that we can create and destroy them all at once
-static struct attribute* attrs[] = {
+static struct kobj_attribute intstate_attribute =        __ATTR(intstate, 0666, i2c_mpu6050_intstate_show, NULL);
+static struct kobj_attribute ledstate_attribute =        __ATTR(ledstate, 0666, i2c_mpu6050_ledstate_show, NULL);
+/* *NOTE*: use a group of attributes so that the kernel can create and destroy
+ *         them all at once
+ */
+static struct attribute* i2c_mpu6050_attrs[] = {
   &store_attribute.attr,
-  &somereg_attribute.attr,
+  &reg_attribute.attr,
   &clearringbuffer_attribute.attr,
-  &gpio19state_attribute.attr,
-  &gpio21state_attribute.attr,
+  &intstate_attribute.attr,
+  &ledstate_attribute.attr,
   NULL, // need to NULL terminate the list of attributes
 };
-/* An unnamed attribute group will put all of the attributes directly in
- * the kobject directory.  If we specify a name, a subdirectory will be
- * created for the attributes with the directory being the name of the
- * attribute group.
- */
-static struct attribute_group attr_group = { .attrs = attrs };
+//ATTRIBUTE_GROUPS(i2c_mpu6050);
+static const struct attribute_group i2c_mpu6050_group = {
+  .attrs = i2c_mpu6050_attrs,
+};
+static const struct attribute_group* i2c_mpu6050_groups[] = {
+  &i2c_mpu6050_group,
+  NULL, // need to NULL terminate the list of attribute groups
+};
+
+static
+int
+i2c_mpu6050_pm_prepare(struct device* device_in)
+{
+  return 0;
+}
+static
+void
+i2c_mpu6050_pm_complete(struct device* device_in)
+{
+
+}
+static
+int
+i2c_mpu6050_pm_suspend(struct device* device_in)
+{
+  return 0;
+}
+static
+int
+i2c_mpu6050_pm_resume(struct device* device_in)
+{
+  return 0;
+}
+static
+int
+i2c_mpu6050_pm_freeze(struct device* device_in)
+{
+  return 0;
+}
+static
+int
+i2c_mpu6050_pm_thaw(struct device* device_in)
+{
+  return 0;
+}
+static
+int
+i2c_mpu6050_pm_poweroff(struct device* device_in)
+{
+  return 0;
+}
+static
+int
+i2c_mpu6050_pm_restore(struct device* device_in)
+{
+  return 0;
+}
+static
+int
+i2c_mpu6050_pm_suspend_late(struct device* device_in)
+{
+  return 0;
+}
+static
+int
+i2c_mpu6050_pm_resume_early(struct device* device_in)
+{
+  return 0;
+}
+static
+int
+i2c_mpu6050_pm_freeze_late(struct device* device_in)
+{
+  return 0;
+}
+static
+int
+i2c_mpu6050_pm_thaw_early(struct device* device_in)
+{
+  return 0;
+}
+static
+int
+i2c_mpu6050_pm_poweroff_late(struct device* device_in)
+{
+  return 0;
+}
+static
+int
+i2c_mpu6050_pm_restore_early(struct device* device_in)
+{
+  return 0;
+}
+static
+int
+i2c_mpu6050_pm_suspend_noirq(struct device* device_in)
+{
+  return 0;
+}
+static
+int
+i2c_mpu6050_pm_resume_noirq(struct device* device_in)
+{
+  return 0;
+}
+static
+int
+i2c_mpu6050_pm_freeze_noirq(struct device* device_in)
+{
+  return 0;
+}
+static
+int
+i2c_mpu6050_pm_thaw_noirq(struct device* device_in)
+{
+  return 0;
+}
+static
+int
+i2c_mpu6050_pm_poweroff_noirq(struct device* device_in)
+{
+  return 0;
+}
+static
+int
+i2c_mpu6050_pm_restore_noirq(struct device* device_in)
+{
+  return 0;
+}
+static
+int
+i2c_mpu6050_pm_runtime_suspend(struct device* device_in)
+{
+  return 0;
+}
+static
+int
+i2c_mpu6050_pm_runtime_resume(struct device* device_in)
+{
+  return 0;
+}
+static
+int
+i2c_mpu6050_pm_runtime_idle(struct device* device_in)
+{
+  return 0;
+}
+static struct dev_pm_ops i2c_mpu6050_pm_ops = {
+  .prepare = i2c_mpu6050_pm_prepare,                 // abstain from probe()ing new devices
+  .complete = i2c_mpu6050_pm_complete,               // resume probe()ing new devices
+  .suspend = i2c_mpu6050_pm_suspend,                 // sleep (preserve main memory)
+  .suspend_late = i2c_mpu6050_pm_suspend_late,       // continue operations started by suspend()
+  .resume = i2c_mpu6050_pm_resume,                   // wake up (from sleep)
+  .resume_early = i2c_mpu6050_pm_resume_early,       // prepare to execute resume()
+  .freeze = i2c_mpu6050_pm_freeze,                   // (prepare) deep-sleep (e.g. suspend to disk [hibernate])
+  .freeze_late = i2c_mpu6050_pm_freeze_late,         // continue operations started by freeze()
+  .thaw = i2c_mpu6050_pm_thaw,                       // (resume from) deep-sleep (e.g. load suspend to disk image)
+  .thaw_early = i2c_mpu6050_pm_thaw_early,           // prepare to execute thaw()
+  .poweroff = i2c_mpu6050_pm_poweroff,               // hibernate
+  .poweroff_late = i2c_mpu6050_pm_poweroff_late,     // continue operations started by poweroff()
+  .restore = i2c_mpu6050_pm_restore,                 // wake up (from hibernation)
+  .restore_early = i2c_mpu6050_pm_restore_early,     // prepare to execute restore()
+  //
+  .suspend_noirq = i2c_mpu6050_pm_suspend_noirq,     // complete the actions started by suspend()
+  .resume_noirq = i2c_mpu6050_pm_resume_noirq,       // prepare for the execution of resume()
+  .freeze_noirq = i2c_mpu6050_pm_freeze_noirq,       // complete the actions started by freeze()
+  .thaw_noirq = i2c_mpu6050_pm_thaw_noirq,           // prepare for the execution of thaw()
+  .poweroff_noirq = i2c_mpu6050_pm_poweroff_noirq,   // complete the actions started by poweroff()
+  .restore_noirq = i2c_mpu6050_pm_restore_noirq,     // prepare for the execution of restore()
+  //
+  .runtime_suspend = i2c_mpu6050_pm_runtime_suspend, // (prepare for) runtime suspend
+  .runtime_resume = i2c_mpu6050_pm_runtime_resume,   // resume from runtime suspend
+  .runtime_idle = i2c_mpu6050_pm_runtime_idle        // check for idleness
+};
 
 // driver structure
 // *NOTE*: see https://www.kernel.org/doc/Documentation/i2c/writing-clients
-static struct i2c_device_id i2c_mpu6050_idtable[] = {
-  { "mpu6050", 0 },
+static struct i2c_device_id i2c_mpu6050_id_table[] = {
+  { KO_OLIMEX_MOD_MPU6050_DRIVER_NAME, 0 },
   { }
 };
-MODULE_DEVICE_TABLE(i2c, i2c_mpu6050_idtable);
+MODULE_DEVICE_TABLE(i2c, i2c_mpu6050_id_table);
 
-static struct dev_pm_ops i2c_mpu6050_pm_ops = {
-  .prepare = i2c_mpu6050_pm_prepare,
-  .complete = i2c_mpu6050_pm_complete,
-  .suspend = i2c_mpu6050_pm_suspend,
-  .resume = i2c_mpu6050_pm_resume,
-  .freeze = i2c_mpu6050_pm_freeze,
-  .thaw = i2c_mpu6050_pm_thaw,
-  .poweroff = i2c_mpu6050_pm_poweroff,
-  .restore = i2c_mpu6050_pm_restore,
-  .suspend_late = i2c_mpu6050_pm_suspend_late,
-  .resume_early = i2c_mpu6050_pm_resume_early,
-  .freeze_late = i2c_mpu6050_pm_freeze_late,
-  .thaw_early = i2c_mpu6050_pm_thaw_early,
-  .poweroff_late = i2c_mpu6050_pm_poweroff_late,
-  .restore_early = i2c_mpu6050_pm_restore_early,
-  .suspend_noirq = i2c_mpu6050_pm_suspend_noirq,
-  .resume_noirq = i2c_mpu6050_pm_resume_noirq,
-  .freeze_noirq = i2c_mpu6050_pm_freeze_noirq,
-  .thaw_noirq = i2c_mpu6050_pm_thaw_noirq,
-  .poweroff_noirq = i2c_mpu6050_pm_poweroff_noirq,
-  .restore_noirq = i2c_mpu6050_pm_restore_noirq,
-  .runtime_suspend = i2c_mpu6050_pm_runtime_suspend,
-  .runtime_resume = i2c_mpu6050_pm_runtime_resume,
-  .runtime_idle = i2c_mpu6050_pm_runtime_idle
-};
-static struct i2c_driver i2c_mpu6050_driver = {
-  .class = I2C_CLASS_HWMON,
 
-  /* notifies the driver that a new bus has appeared.
-     *NOTE*: avoid using this, it will be removed in a
-     near future. */
-  .attach_adapter = i2c_mpu6050_attach_adapter,
+static
+int
+i2c_mpu6050_attach_adapter(struct i2c_adapter* adapter_in)
+{
+  printk(KERN_DEBUG "i2c_mpu6050_attach_adapter(%d) called.\n",
+         i2c_adapter_id(adapter_in));
 
-  /* standard driver model interfaces */
-  .probe		= i2c_mpu6050_probe,
-  .remove		= __devexit_p(i2c_mpu6050_remove),
-
-  /* driver model interfaces that don't relate to enumeration */
-  .shutdown	= i2c_mpu6050_shutdown,
-  .suspend	= i2c_mpu6050_suspend,
-  .resume	= i2c_mpu6050_resume,
-
-  /* alert callback, for example for the SMBus alert protocol.
-     The format and meaning of the data value depends on the protocol.
-     For the SMBus alert protocol, there is a single bit of data passed
-     as the alert response's low bit ("event flag"). */
-  .alert = i2c_mpu6050_alert,
-
-  /* a ioctl like command that can be used to perform specific functions
-     with the device. */
-  .command = i2c_mpu6050_command,
-
-  .driver = {
-    .name	= "mpu6050", // be sure to match this with any aliased 'i2c_board_info's
-//    .bus = ,
-    .owner = THIS_MODULE,
-//    .mod_name = ,
-//    .suppress_bind_attrs = ,
-//    .of_device_id = ,
-//    .acpi_device_id = ,
-//    .probe = ,
-//    .remove = ,
-//    .shutdown = ,
-//    .suspend = ,
-//    .resume = ,
-    .attribute_group = attr_group,
-    .pm	= &i2c_mpu6050_pm_ops,
-//    .p = ,
-  },
-  .id_table	= i2c_mpu6050_idtable,
-
-  /* device detection callback for automatic device creation */
-  .detect		= i2c_mpu6050_detect,
-  .address_list	= normal_i2c,
-  .clients =
+//  return i2c_detect(adapter_in, &addr_data,
+//                    chip_detect);
+  return 0;
 }
-//module_i2c_driver(i2c_mpu6050_driver);
+static
+int
+i2c_mpu6050_detach_adapter(struct i2c_adapter* adapter_in)
+{
+  printk(KERN_DEBUG "i2c_mpu6050_detach_adapter(%d) called.\n",
+         i2c_adapter_id(adapter_in));
+
+  return 0;
+}
 
 // this function gets called when a matching modalias and driver name found
 static int __devinit i2c_mpu6050_probe(struct i2c_client* client_in,
                                        const struct i2c_device_id* id_in)
 {
   int err, gpio_used;
-  struct i2c_mpu6050_client_data* client_data_p;
+  struct i2c_mpu6050_client_data_t* client_data_p;
+  struct gpio_chip* gpio_chip_p;
 
   printk(KERN_DEBUG "i2c_mpu6050_probe() called.\n");
 
@@ -524,7 +653,7 @@ static int __devinit i2c_mpu6050_probe(struct i2c_client* client_in,
     return -ENODEV;
   }
 
-  client_data_p = kzalloc(sizeof(struct i2c_mpu6050_client_data), GFP_KERNEL);
+  client_data_p = kzalloc(sizeof(struct i2c_mpu6050_client_data_t), GFP_KERNEL);
   if (IS_ERR(client_data_p)) {
     printk(KERN_ERR "%s: no memory\n", __func__);
     return PTR_ERR(client_data_p);
@@ -546,7 +675,7 @@ static int __devinit i2c_mpu6050_probe(struct i2c_client* client_in,
   err = script_parser_fetch("gpio_para",
                             GPIO_UEXT4_UART4RX_PG11_LABEL,
                             (int*)&client_data_p->gpio_int_data,
-                            sizeof(struct script_gpio_set_t));
+                            sizeof(script_gpio_set_t));
   if (err) {
     pr_err("%s script_parser_fetch \"gpio_para\" \"%s\" error\n",
            __FUNCTION__,
@@ -560,7 +689,7 @@ static int __devinit i2c_mpu6050_probe(struct i2c_client* client_in,
   err = script_parser_fetch("gpio_para",
                             GPIO_LED_PH02_LABEL,
                             (int*)&client_data_p->gpio_led_data,
-                            sizeof(struct script_gpio_set_t));
+                            sizeof(script_gpio_set_t));
   if (err) {
     pr_err("%s script_parser_fetch \"gpio_para\" \"%s\" error\n",
            __FUNCTION__,
@@ -582,17 +711,17 @@ static int __devinit i2c_mpu6050_probe(struct i2c_client* client_in,
 
     return PTR_ERR(client_data_p->object);
   }
-  // create the files associated with this kobject
-  err = sysfs_create_group(client_data_p->object, &attr_group);
-  if (err) {
-    printk(KERN_ERR "unable to create sysfs files\n");
+//  // create the files associated with this kobject
+//  err = sysfs_create_group(client_data_p->object, &i2c_mpu6050_attribute_group);
+//  if (err) {
+//    printk(KERN_ERR "unable to create sysfs files\n");
 
-    // clean up
-    kobject_unregister(client_data_p->object);
-    kfree(client_data_p);
+//    // clean up
+//    kobject_del(client_data_p->object);
+//    kfree(client_data_p);
 
-    return -ENOMEM;
-  }
+//    return -ENOMEM;
+//  }
   // *TODO*: announce new sysfs object
 //  err = kobject_uevent(client_data_p->object, enum kobject_action action);
 //  if (err) {
@@ -609,26 +738,27 @@ static int __devinit i2c_mpu6050_probe(struct i2c_client* client_in,
     printk(KERN_ERR "unable to create workqueue\n");
 
     // clean up
-    kobject_unregister(client_data_p->object);
+    kobject_del(client_data_p->object);
     kfree(client_data_p);
 
     return PTR_ERR(client_data_p->workqueue);
   }
   INIT_WORK(&client_data_p->work_processfifostore.work, i2c_mpu6050_workqueue_fifo_handler);
-  client_data_p->work_fifo.client = client_data_p->client;
+  client_data_p->work_processfifostore.client = client_data_p->client;
   INIT_WORK(&client_data_p->work_read.work, i2c_mpu6050_workqueue_read_handler);
   client_data_p->work_read.client = client_data_p->client;
   i2c_mpu6050_clearringbuffer(client_data_p);
-  __SPIN_LOCK_INITIALIZER(client_data_p->sync_lock);
+  spin_lock_init(&client_data_p->sync_lock);
 
   // initialize interrupt for GPIO INT line
-  client_data_p->pin_ctrl = devm_pinctrl_get(client_in->dev);
+//  client_data_p->pin_ctrl = devm_pinctrl_get(&client_in->dev);
+  client_data_p->pin_ctrl = pinctrl_get(&client_in->dev);
   if (IS_ERR(client_data_p->pin_ctrl)) {
     printk(KERN_ERR "unable to retrieve pinctrl configuration\n");
 
     // clean up
     destroy_workqueue(client_data_p->workqueue);
-    kobject_unregister(client_data_p->object);
+    kobject_del(client_data_p->object);
     kfree(client_data_p);
 
     return PTR_ERR(client_data_p->pin_ctrl);
@@ -639,21 +769,24 @@ static int __devinit i2c_mpu6050_probe(struct i2c_client* client_in,
     printk(KERN_ERR "unable to retrieve pinctrl state\n");
 
     // clean up
-    devm_pinctrl_put(client_data_p->pin_ctrl);
+//    devm_pinctrl_put(client_data_p->pin_ctrl);
+    pinctrl_put(client_data_p->pin_ctrl);
     destroy_workqueue(client_data_p->workqueue);
-    kobject_unregister(client_data_p->object);
+    kobject_del(client_data_p->object);
     kfree(client_data_p);
 
     return PTR_ERR(client_data_p->pin_ctrl_state);
   }
-  err = pinctrl_select_state(client_data_p->pin_ctrl_state);
+  err = pinctrl_select_state(client_data_p->pin_ctrl,
+                             client_data_p->pin_ctrl_state);
   if (err < 0) {
     printk(KERN_ERR "unable to set pinctrl state\n");
 
     // clean up
-    devm_pinctrl_put(client_data_p->pin_ctrl);
+    //    devm_pinctrl_put(client_data_p->pin_ctrl);
+    pinctrl_put(client_data_p->pin_ctrl);
     destroy_workqueue(client_data_p->workqueue);
-    kobject_unregister(client_data_p->object);
+    kobject_del(client_data_p->object);
     kfree(client_data_p);
 
     return -ENOSYS;
@@ -663,9 +796,10 @@ static int __devinit i2c_mpu6050_probe(struct i2c_client* client_in,
     printk(KERN_ERR "%s: invalid GPIO\n", GPIO_UEXT4_UART4RX_PG11_LABEL);
 
     // clean up
-    devm_pinctrl_put(client_data_p->pin_ctrl);
+    //    devm_pinctrl_put(client_data_p->pin_ctrl);
+    pinctrl_put(client_data_p->pin_ctrl);
     destroy_workqueue(client_data_p->workqueue);
-    kobject_unregister(client_data_p->object);
+    kobject_del(client_data_p->object);
     kfree(client_data_p);
 
     return -ENOSYS;
@@ -675,14 +809,15 @@ static int __devinit i2c_mpu6050_probe(struct i2c_client* client_in,
     printk(KERN_ERR "%s: invalid GPIO\n", GPIO_LED_PH02_LABEL);
 
     // clean up
-    devm_pinctrl_put(client_data_p->pin_ctrl);
+    //    devm_pinctrl_put(client_data_p->pin_ctrl);
+    pinctrl_put(client_data_p->pin_ctrl);
     destroy_workqueue(client_data_p->workqueue);
-    kobject_unregister(client_data_p->object);
+    kobject_del(client_data_p->object);
     kfree(client_data_p);
 
     return -ENOSYS;
   }
-  err = devm_gpio_request(client_in->dev,
+  err = devm_gpio_request(&client_in->dev,
                           GPIO_UEXT4_UART4RX_PG11_PIN,
                           GPIO_UEXT4_UART4RX_PG11_LABEL);
   if (err < 0) {
@@ -690,9 +825,10 @@ static int __devinit i2c_mpu6050_probe(struct i2c_client* client_in,
            GPIO_UEXT4_UART4RX_PG11_LABEL);
 
     // clean up
-    devm_pinctrl_put(client_data_p->pin_ctrl);
+    //    devm_pinctrl_put(client_data_p->pin_ctrl);
+    pinctrl_put(client_data_p->pin_ctrl);
     destroy_workqueue(client_data_p->workqueue);
-    kobject_unregister(client_data_p->object);
+    kobject_del(client_data_p->object);
     kfree(client_data_p);
 
     return -ENOSYS;
@@ -704,10 +840,12 @@ static int __devinit i2c_mpu6050_probe(struct i2c_client* client_in,
 //    printk(KERN_ERR "%s: unable to request GPIO\n",
 //           GPIO_UEXT4_UART4RX_PG11_LABEL);
 
-//    // clean up
-//    destroy_workqueue(client_data_p->workqueue);
-//    kobject_unregister(client_data_p->object);
-//    kfree(client_data_p);
+//  // clean up
+//  //    devm_pinctrl_put(client_data_p->pin_ctrl);
+//  pinctrl_put(client_data_p->pin_ctrl);
+//  destroy_workqueue(client_data_p->workqueue);
+//  kobject_del(client_data_p->object);
+//  kfree(client_data_p);
 
 //    return -EIO;
 //  }
@@ -718,9 +856,10 @@ static int __devinit i2c_mpu6050_probe(struct i2c_client* client_in,
            GPIO_LED_PH02_LABEL);
 
     // clean up
-    devm_pinctrl_put(client_data_p->pin_ctrl);
+    //    devm_pinctrl_put(client_data_p->pin_ctrl);
+    pinctrl_put(client_data_p->pin_ctrl);
     destroy_workqueue(client_data_p->workqueue);
-    kobject_unregister(client_data_p->object);
+    kobject_del(client_data_p->object);
     kfree(client_data_p);
 
     return -ENOSYS;
@@ -734,44 +873,50 @@ static int __devinit i2c_mpu6050_probe(struct i2c_client* client_in,
 
     // clean up
     gpio_release(client_data_p->gpio_led_handle, 1);
-    devm_gpio_free(GPIO_UEXT4_UART4RX_PG11_PIN);
-    devm_pinctrl_put(client_data_p->pin_ctrl);
+    devm_gpio_free(&client_in->dev,
+                   GPIO_UEXT4_UART4RX_PG11_PIN);
+    //    devm_pinctrl_put(client_data_p->pin_ctrl);
+    pinctrl_put(client_data_p->pin_ctrl);
     destroy_workqueue(client_data_p->workqueue);
-    kobject_unregister(client_data_p->object);
+    kobject_del(client_data_p->object);
     kfree(client_data_p);
 
     return -EIO;
   }
-  err = gpio_export_link(client_data_p->client.dev,
+  err = gpio_export_link(&client_data_p->client->dev,
                          GPIO_UEXT4_UART4RX_PG11_LABEL,
                          GPIO_UEXT4_UART4RX_PG11_PIN);
   if (err) {
     printk(KERN_ERR "%s: unable to export GPIO\n",
-           GPIO_UEXT4_UART4RX_PG11_10_LABEL);
+           GPIO_UEXT4_UART4RX_PG11_LABEL);
 
     // clean up
     gpio_unexport(GPIO_UEXT4_UART4RX_PG11_PIN);
     gpio_release(client_data_p->gpio_led_handle, 1);
-    devm_gpio_free(GPIO_UEXT4_UART4RX_PG11_PIN);
-    devm_pinctrl_put(client_data_p->pin_ctrl);
+    devm_gpio_free(&client_in->dev,
+                   GPIO_UEXT4_UART4RX_PG11_PIN);
+    //    devm_pinctrl_put(client_data_p->pin_ctrl);
+    pinctrl_put(client_data_p->pin_ctrl);
     destroy_workqueue(client_data_p->workqueue);
-    kobject_unregister(client_data_p->object);
+    kobject_del(client_data_p->object);
     kfree(client_data_p);
 
     return -EIO;
   }
-  client_data_p->client.irq = gpio_to_irq(GPIO_UEXT4_UART4RX_PG11_PIN);
-  if (client_data_p->client.irq < 0) {
+  client_data_p->client->irq = gpio_to_irq(GPIO_UEXT4_UART4RX_PG11_PIN);
+  if (client_data_p->client->irq < 0) {
     printk(KERN_ERR "%s: unable to request GPIO IRQ\n",
-           GPIO_UEXT4_UART4RX_PG11_10_LABEL);
+           GPIO_UEXT4_UART4RX_PG11_LABEL);
 
     // clean up
     gpio_unexport(GPIO_UEXT4_UART4RX_PG11_PIN);
     gpio_release(client_data_p->gpio_led_handle, 1);
-    devm_gpio_free(GPIO_UEXT4_UART4RX_PG11_PIN);
-    devm_pinctrl_put(client_data_p->pin_ctrl);
+    devm_gpio_free(&client_in->dev,
+                   GPIO_UEXT4_UART4RX_PG11_PIN);
+    //    devm_pinctrl_put(client_data_p->pin_ctrl);
+    pinctrl_put(client_data_p->pin_ctrl);
     destroy_workqueue(client_data_p->workqueue);
-    kobject_unregister(client_data_p->object);
+    kobject_del(client_data_p->object);
     kfree(client_data_p);
 
     return -EIO;
@@ -779,23 +924,62 @@ static int __devinit i2c_mpu6050_probe(struct i2c_client* client_in,
   printk(KERN_INFO "%s: GPIO %d --> IRQ %d\n",
          GPIO_UEXT4_UART4RX_PG11_LABEL,
          GPIO_UEXT4_UART4RX_PG11_PIN,
-         client_data_p->client.irq);
-  gpiochip_lock_as_irq();
-  err = request_irq(client_data_p->client.irq,
-                    i2c_mpu6050_interrupt_handler,
-                    SA_INTERRUPT | IRQF_TRIGGER_RISING,
-                    GPIO_UEXT4_UART4RX_PG11_LABEL,
-                    &(client_data_p->client.dev));
-  if (err) {
-    printk(KERN_ERR "unable to request IRQ: %d already claimed or allocation failed\n", client_data_p->client.irq);
+         client_data_p->client->irq);
+  gpio_chip_p = gpio_to_chip(GPIO_UEXT4_UART4RX_PG11_PIN);
+  if (!gpio_chip_p) {
+    printk(KERN_ERR "unable to retrieve GPIO chip: %d\n",
+           GPIO_UEXT4_UART4RX_PG11_PIN);
 
     // clean up
     gpio_unexport(GPIO_UEXT4_UART4RX_PG11_PIN);
     gpio_release(client_data_p->gpio_led_handle, 1);
-    devm_gpio_free(GPIO_UEXT4_UART4RX_PG11_PIN);
-    devm_pinctrl_put(client_data_p->pin_ctrl);
+    devm_gpio_free(&client_in->dev,
+                   GPIO_UEXT4_UART4RX_PG11_PIN);
+    //    devm_pinctrl_put(client_data_p->pin_ctrl);
+    pinctrl_put(client_data_p->pin_ctrl);
     destroy_workqueue(client_data_p->workqueue);
-    kobject_unregister(client_data_p->object);
+    kobject_del(client_data_p->object);
+    kfree(client_data_p);
+
+    return -EIO;
+  }
+//  err = gpio_lock_as_irq(gpio_chip_p,
+//                         GPIO_UEXT4_UART4RX_PG11_PIN);
+//  if (err) {
+//    printk(KERN_ERR "failed to lock GPIO as IRQ: %d\n",
+//           GPIO_UEXT4_UART4RX_PG11_PIN);
+
+//    // clean up
+//    gpio_unexport(GPIO_UEXT4_UART4RX_PG11_PIN);
+//    gpio_release(client_data_p->gpio_led_handle, 1);
+//    devm_gpio_free(&client_in->dev,
+//                   GPIO_UEXT4_UART4RX_PG11_PIN);
+//    //    devm_pinctrl_put(client_data_p->pin_ctrl);
+//    pinctrl_put(client_data_p->pin_ctrl);
+//    destroy_workqueue(client_data_p->workqueue);
+//    kobject_del(client_data_p->object);
+//    kfree(client_data_p);
+
+//    return -EIO;
+//  }
+  err = request_irq(client_data_p->client->irq,
+                    i2c_mpu6050_interrupt_handler,
+                    (IRQ_TYPE_EDGE_RISING),
+                    GPIO_UEXT4_UART4RX_PG11_LABEL,
+                    &client_data_p->client->dev);
+  if (err) {
+    printk(KERN_ERR "unable to request IRQ: %d already claimed or allocation failed\n",
+           client_data_p->client->irq);
+
+    // clean up
+    gpio_unexport(GPIO_UEXT4_UART4RX_PG11_PIN);
+    gpio_release(client_data_p->gpio_led_handle, 1);
+    devm_gpio_free(&client_in->dev,
+                   GPIO_UEXT4_UART4RX_PG11_PIN);
+    //    devm_pinctrl_put(client_data_p->pin_ctrl);
+    pinctrl_put(client_data_p->pin_ctrl);
+    destroy_workqueue(client_data_p->workqueue);
+    kobject_del(client_data_p->object);
     kfree(client_data_p);
 
     return -EIO;
@@ -807,6 +991,7 @@ static int __devinit i2c_mpu6050_probe(struct i2c_client* client_in,
 static int i2c_mpu6050_remove(struct i2c_client* client_in)
 {
   struct i2c_mpu6050_client_data_t* client_data_p = NULL;
+  struct gpio_chip* gpio_chip_p;
 
   printk(KERN_DEBUG "i2c_mpu6050_remove() called.\n");
 
@@ -816,35 +1001,259 @@ static int i2c_mpu6050_remove(struct i2c_client* client_in)
     return -ENODEV;
   }
 
+  gpio_chip_p = gpio_to_chip(GPIO_UEXT4_UART4RX_PG11_PIN);
+  if (!gpio_chip_p) {
+    printk(KERN_ERR "unable to retrieve GPIO chip: %d\n",
+           GPIO_UEXT4_UART4RX_PG11_PIN);
+    return -ENODEV;
+  }
+
   // clean up
-  gpiochip_unlock_as_irq();
+//  gpiochip_unlock_as_irq(gpio_chip_p,
+//                         GPIO_UEXT4_UART4RX_PG11_PIN);
   free_irq(client_data_p->client->irq, NULL);
-  gpio_unexport(SUNXI_GPIO(GPIO_UEXT4_UART4RX_PG11_10_NAME));
-  gpio_free(SUNXI_GPIO(GPIO_UEXT4_UART4RX_PG11_10_NAME));
+  gpio_unexport(GPIO_UEXT4_UART4RX_PG11_PIN);
+  devm_gpio_free(&client_data_p->client->dev,
+                 GPIO_UEXT4_UART4RX_PG11_PIN);
   flush_workqueue(client_data_p->workqueue);
   destroy_workqueue(client_data_p->workqueue);
-  kobject_unregister(client_data_p->object);
+  kobject_del(client_data_p->object);
   kfree(client_data_p);
 
   return 0;
 }
 
+static
+void
+i2c_mpu6050_shutdown(struct i2c_client* client_in)
+{
+
+}
+static
+int
+i2c_mpu6050_suspend(struct i2c_client* client_in, pm_message_t message_in)
+{
+  return 0;
+}
+static
+int
+i2c_mpu6050_resume(struct i2c_client* client_in)
+{
+  return 0;
+}
+
+static
+void
+i2c_mpu6050_alert(struct i2c_client* client_in, unsigned int data_in)
+{
+
+}
+
+static
+int
+i2c_mpu6050_command(struct i2c_client* client_in, unsigned int command_in, void* data_in)
+{
+  return 0;
+}
+
+//static struct device_driver i2c_mpu6050_device_driver = {
+//  .name	= KO_OLIMEX_MOD_MPU6050_DRIVER, // be sure to match this with any aliased 'i2c_board_info's
+////    .bus = ,
+//  .owner = THIS_MODULE,
+////    .mod_name = ,
+////    .suppress_bind_attrs = ,
+////    .of_match_table = ,
+////    .acpi_match_table = ,
+////    .probe = ,
+////    .remove = ,
+////    .shutdown = ,
+////    .suspend = ,
+////    .resume = ,
+//  .groups = &attr_group,
+//  .pm	= &i2c_mpu6050_pm_ops,
+////    .p = ,
+//};
+
+static
+int
+i2c_mpu6050_detect(struct i2c_client* client_in, struct i2c_board_info* info_in)
+{
+  printk(KERN_DEBUG "i2c_mpu6050_detect(\"%s\") called.\n",
+         info_in->type);
+
+  // *NOTE*: return 0 for supported, -ENODEV for unsupported devices
+  return  ((strcmp(info_in->type,
+                   KO_OLIMEX_MOD_MPU6050_DRIVER_NAME) == 0) ? 0
+                                                            : -ENODEV);
+}
+
+static unsigned short normal_i2c[] = {
+  MPU6050_ADDRESS_AD0_LOW,
+  MPU6050_ADDRESS_AD0_HIGH,
+  I2C_CLIENT_END
+};
+//static unsigned short normal_i2c_range[] = {
+//  0x00, 0xff,
+//  I2C_CLIENT_END
+//};
+//static unsigned int normal_isa[] = {
+//  I2C_CLIENT_ISA_END
+//};
+//static unsigned int normal_isa_range[] = {
+//  I2C_CLIENT_ISA_END
+//};
+
+//static struct list_head i2c_mpu6050_clients;
+static struct i2c_driver i2c_mpu6050_i2c_driver = {
+  .class = I2C_CLASS_HWMON,
+
+   /* Notifies the driver that a new bus has appeared or is about to be
+    * removed. You should avoid using this, it will be removed in a
+    * near future.
+    */
+  .attach_adapter = i2c_mpu6050_attach_adapter,
+  .detach_adapter = i2c_mpu6050_detach_adapter,
+
+    /* Standard driver model interfaces */
+  .probe		= i2c_mpu6050_probe,
+  .remove		= __devexit_p(i2c_mpu6050_remove),
+
+  /* driver model interfaces that don't relate to enumeration  */
+  .shutdown	= i2c_mpu6050_shutdown,
+  .suspend	= i2c_mpu6050_suspend,
+  .resume	= i2c_mpu6050_resume,
+
+  /* Alert callback, for example for the SMBus alert protocol.
+   * The format and meaning of the data value depends on the protocol.
+   * For the SMBus alert protocol, there is a single bit of data passed
+   * as the alert response's low bit ("event flag").
+   */
+  .alert = i2c_mpu6050_alert,
+
+  /* a ioctl like command that can be used to perform specific functions
+   * with the device.
+   */
+  .command = i2c_mpu6050_command,
+
+//  .driver = i2c_mpu6050_device_driver,
+  .driver = {
+    .name	= KO_OLIMEX_MOD_MPU6050_DRIVER_NAME, // be sure to match this with any aliased 'i2c_board_info's
+    .bus = NULL,
+    .owner = THIS_MODULE,
+    .mod_name = NULL,
+    .suppress_bind_attrs = false,
+    .of_match_table = NULL,
+//    .acpi_match_table = NULL,
+//    .probe = ,
+//    .remove = ,
+//    .shutdown = ,
+//    .suspend = ,
+//    .resume = ,
+    .groups = i2c_mpu6050_groups,
+    .pm	= &i2c_mpu6050_pm_ops,
+    .p = NULL,
+  },
+  .id_table = i2c_mpu6050_id_table,
+
+  /* Device detection callback for automatic device creation */
+  .detect = i2c_mpu6050_detect,
+  .address_list = normal_i2c,
+//  .clients = i2c_mpu6050_clients,
+};
+//module_i2c_driver(i2c_mpu6050_driver);
+
+//static
+//int
+//chip_detect(struct i2c_adapter* adapter_in, int address_in, int kind_in)
+//{
+//  struct i2c_client* client_p;
+//  struct i2c_mpu6050_client_data_t* client_data_p;
+//  int err = 0;
+
+//  client_p = kmalloc(sizeof(*client_p), GFP_KERNEL);
+//  if (!client_p) {
+//    printk(KERN_ERR "%s: failed to kmalloc\n", __func__);
+//    return -ENOMEM;
+//  }
+//  memset(client_p, 0, sizeof(*client_p));
+//  client_data_p = kmalloc(sizeof(*client_data_p), GFP_KERNEL);
+//  if (!client_data_p) {
+//    printk(KERN_ERR "%s: failed to kmalloc\n", __func__);
+
+//    // clean up
+//    kfree(client_p);
+
+//    return -ENOMEM;
+//  }
+//  memset(client_data_p, 0, sizeof(*client_data_p));
+
+//  i2c_set_clientdata(client_p, client_data_p);
+//  client_p->addr = address_in;
+//  client_p->adapter = adapter_in;
+//  client_p->driver = &i2c_mpu6050_i2c_driver;
+//  client_p->flags = 0;
+//  strncpy(client_p->name, KO_OLIMEX_MOD_MPU6050_DRIVER_NAME,
+//          I2C_NAME_SIZE);
+
+//  /* Tell the I2C layer a new client has arrived */
+//  err = i2c_attach_client(client_p);
+//  if (IS_ERR(err))
+//  {
+//    printk(KERN_ERR "failed to i2c_attach_client: %d\n", err);
+
+//    // clean up
+//    kfree(client_p);
+//    kfree(client_data_p);
+
+//    return -ENODEV;
+//  }
+
+//  return 0;
+//}
+
 // this gets called on module init
+static struct i2c_board_info i2c_mpu6050_board_infos[] = {
+  {
+    I2C_BOARD_INFO(KO_OLIMEX_MOD_MPU6050_DRIVER_NAME, MPU6050_DEFAULT_ADDRESS),
+//    .type = ,
+    .flags = 0,
+//    .addr = ,
+    .platform_data = NULL,
+    .archdata = NULL,
+    .of_node = NULL,
+//    .irq = gpio_to_irq(GPIO_UEXT4_UART4RX_PG11_PIN),
+  },
+};
+static const struct regmap_config i2c_mpu6050_regmap_config = {
+  .reg_bits = 8,
+  .val_bits = 8,
+  .max_register = MPU6050_RA_WHO_AM_I,
+};
 static int __init i2c_mpu6050_init(void)
 {
   char buffer[BUFSIZ];
+  int error = 0;
 
   // registering I2C driver, this will call i2c_mpu6050_probe()
-  int error = i2c_add_driver(&i2c_mpu6050_driver);
+  INIT_LIST_HEAD(&i2c_mpu6050_i2c_driver.clients);
+  error = i2c_add_driver(&i2c_mpu6050_i2c_driver);
   if (error < 0) {
     printk(KERN_ERR "i2c_add_driver() failed %d\n", error);
     return error;
   }
 
-  memset(&buffer, 0, sizeof(buffer));
-  strcpy(&buffer, KO_OLIMEX_MOD_MPU6050_DESCRIPTION);
-  strcpy(&buffer + sizeof(KO_OLIMEX_MOD_MPU6050_DESCRIPTION), "...added\n");
-  printk(KERN_INFO buffer);
+  i2c_mpu6050_board_infos[0].irq = gpio_to_irq(GPIO_UEXT4_UART4RX_PG11_PIN);
+  error = i2c_register_board_info(0,
+                                  ARRAY_AND_SIZE(i2c_mpu6050_board_infos));
+  if (error < 0) {
+    printk(KERN_ERR "i2c_register_board_info() failed %d\n", error);
+    return error;
+  }
+
+  memset(buffer, 0, sizeof(buffer));
+  strcpy(buffer, KO_OLIMEX_MOD_MPU6050_DESCRIPTION);
+  strcpy(buffer + sizeof(KO_OLIMEX_MOD_MPU6050_DESCRIPTION), "...added\n");
+  printk(KERN_INFO "%s", buffer);
 
   return 0;
 }
@@ -854,12 +1263,12 @@ static void __exit i2c_mpu6050_exit(void)
   char buffer[BUFSIZ];
 
   // unregistering I2C driver, this will call i2c_mpu6050_remove()
-  i2c_del_driver(&i2c_mpu6050_driver);
+  i2c_del_driver(&i2c_mpu6050_i2c_driver);
 
-  memset(&buffer, 0, sizeof(buffer));
-  strcpy(&buffer, KO_OLIMEX_MOD_MPU6050_DESCRIPTION);
-  strcpy(&buffer + sizeof(KO_OLIMEX_MOD_MPU6050_DESCRIPTION), "...removed\n");
-  printk(KERN_INFO buffer);
+  memset(buffer, 0, sizeof(buffer));
+  strcpy(buffer, KO_OLIMEX_MOD_MPU6050_DESCRIPTION);
+  strcpy(buffer + sizeof(KO_OLIMEX_MOD_MPU6050_DESCRIPTION), "...removed\n");
+  printk(KERN_INFO "%s", buffer);
 }
 // setting which function to call on module init and exit
 module_init(i2c_mpu6050_init);

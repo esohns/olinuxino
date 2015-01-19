@@ -1,8 +1,13 @@
 #moduledir = @moduledir@
 KERNEL_LOCATION = @kerneldir@
+#KERNEL_LOCATION = /home/esohns/Projects/A10/linux-sunxi
 #KERNEL_LOCATION = /lib/modules/$(shell uname -r)/build
 KBUILD_VERBOSE = 1
 #MOD_DEVDIR = $(PWD)
+
+ARCH = arm
+CROSS_COMPILE = arm-linux-gnu-
+#CROSS_COMPILE = ppc_6xxx-
 
 export module_DATA
 
@@ -15,8 +20,8 @@ export automake_dummy_CFLAGS
 $(module_DATA): $(automake_dummy_SOURCES)
 	mv Makefile Makefile.automake
 	cp $(srcdir)/Makefile.kernel Makefile
-	$(MAKE) -C $(KERNEL_LOCATION) \
-  ARCH="x86_64" CC="gcc" M=$(PWD) modules \
+	$(MAKE) -C $(KERNEL_LOCATION) M=$(PWD) modules \
+  KBUILD_VERBOSE=$(KBUILD_VERBOSE) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) \
   V=$(KBUILD_VERBOSE)
 	mv Makefile.automake Makefile
 

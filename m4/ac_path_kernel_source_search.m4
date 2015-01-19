@@ -47,9 +47,9 @@ AC_DEFUN([AC_PATH_KERNEL_SOURCE_SEARCH],
     fi
   fi
   ac_cv_have_kernel="no_kernel=${no_kernel} \
-		kerneldir=\"${kerneldir}\" \
-		kernelext=\"${kernelext}\" \
-		kernelcc=\"${kernelcc}\""
+    kerneldir=\"${kerneldir}\" \
+    kernelext=\"${kernelext}\" \
+    kernelcc=\"${kernelcc}\""
 ]
 )
 
@@ -58,11 +58,10 @@ AC_DEFUN([AC_PATH_KERNEL_SOURCE],
   AC_CHECK_PROG(ac_pkss_mktemp,mktemp,yes,no)
   AC_PROVIDE([AC_PATH_KERNEL_SOURCE])
   AC_MSG_CHECKING(for Linux kernel sources)
-  AC_ARG_WITH(kerneldir,
-	      [  --with-kerneldir=DIR    kernel sources in DIR], 
-	      ac_kerneldir=${withval}
-	      AC_PATH_KERNEL_SOURCE_SEARCH,
-              ac_kerneldir=""
+  AC_ARG_WITH([kerneldir],
+              [AS_HELP_STRING([--with-kerneldir=DIR],[kernel sources in DIR @<:@default="/usr/src/linux"@:>@])],
+              [ac_kerneldir=${withval}],
+              [ac_kerneldir="/usr/src/linux"],
               AC_CACHE_VAL(ac_cv_have_kernel,AC_PATH_KERNEL_SOURCE_SEARCH)
   )
 

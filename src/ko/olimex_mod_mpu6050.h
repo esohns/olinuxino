@@ -15,34 +15,38 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>. */
 
-#include <asm/types.h>
-
-#include <linux/pinctrl/consumer.h>
 #include <linux/i2c.h>
 #include <linux/interrupt.h>
 #include <linux/kobject.h>
+#include <linux/pinctrl/consumer.h>
 #include <linux/spinlock.h>
-#include <linux/types.h>
 #include <linux/workqueue.h>
 
 #include <plat/sys_config.h>
 
 // defines
-#define KO_OLIMEX_MOD_MPU6050_LICENSE     "GPL";
-#define KO_OLIMEX_MOD_MPU6050_AUTHOR      "Erik Sohns";
-#define KO_OLIMEX_MOD_MPU6050_VERSION     "0.1";
-#define KO_OLIMEX_MOD_MPU6050_DESCRIPTION "I2C kernel module driver for the Olimex MOD-MPU6050 UEXT module"
+#define KO_OLIMEX_MOD_MPU6050_LICENSE         "GPL"
+#define KO_OLIMEX_MOD_MPU6050_AUTHOR          "Erik Sohns"
+#define KO_OLIMEX_MOD_MPU6050_VERSION         "0.1"
+#define KO_OLIMEX_MOD_MPU6050_DRIVER_NAME     "olimex_mod_mpu6050"
+#define KO_OLIMEX_MOD_MPU6050_DESCRIPTION     "I2C kernel module driver for the Olimex MOD-MPU6050 UEXT module"
+
+// defaults
+#define BUFSIZ                                256
+
+// macros
+#define ARRAY_AND_SIZE(x)	                    (x), ARRAY_SIZE(x)
 
 // *NOTE*: check the .fex file (bin2fex of script.bin) in the device boot partition
-#define GPIO_UEXT4_UART4RX_PG11_PIN       10
-#define GPIO_UEXT4_UART4RX_PG11_LABEL     "gpio_pin_10"
-#define GPIO_LED_PH02_PIN                 20
-#define GPIO_LED_PH02_LABEL               "gpio_pin_20"
+#define GPIO_UEXT4_UART4RX_PG11_PIN           10
+#define GPIO_UEXT4_UART4RX_PG11_LABEL         "gpio_pin_10"
+#define GPIO_LED_PH02_PIN                     20
+#define GPIO_LED_PH02_LABEL                   "gpio_pin_20"
 
-#define FIFOSTORESIZE                     20
-#define FIFOSTOREDATASIZE                 64
-#define RINGBUFFERSIZE                    20
-#define RINGBUFFERDATASIZE                64
+#define FIFOSTORESIZE                         20
+#define FIFOSTOREDATASIZE                     64
+#define RINGBUFFERSIZE                        20
+#define RINGBUFFERDATASIZE                    64
 
 // types
 struct fifostoreentry_t {
@@ -98,13 +102,51 @@ static irqreturn_t i2c_mpu6050_interrupt_handler(int, void*);
 
 static void i2c_mpu6050_clearringbuffer(void*);
 
-static ssize_t i2c_mpu6050_somereg_show(struct kobject*, struct kobj_attribute*, char*);
-static ssize_t i2c_mpu6050_somereg_store(struct kobject*, struct kobj_attribute*, const char*, size_t);
+static ssize_t i2c_mpu6050_reg_show(struct kobject*, struct kobj_attribute*, char*);
+static ssize_t i2c_mpu6050_reg_store(struct kobject*, struct kobj_attribute*, const char*, size_t);
 static ssize_t i2c_mpu6050_clearringbuffer_store(struct kobject*, struct kobj_attribute*, const char*, size_t);
-static ssize_t i2c_mpu6050_gpio19state_show(struct kobject*, struct kobj_attribute*, char*);
-static ssize_t i2c_mpu6050_gpio21state_show(struct kobject*, struct kobj_attribute*, char*);
 
+static int i2c_mpu6050_pm_prepare(struct device*);
+static void i2c_mpu6050_pm_complete(struct device*);
+static int i2c_mpu6050_pm_suspend(struct device*);
+static int i2c_mpu6050_pm_suspend_late(struct device*);
+static int i2c_mpu6050_pm_resume(struct device*);
+static int i2c_mpu6050_pm_resume_early(struct device*);
+static int i2c_mpu6050_pm_freeze(struct device*);
+static int i2c_mpu6050_pm_freeze_late(struct device*);
+static int i2c_mpu6050_pm_thaw(struct device*);
+static int i2c_mpu6050_pm_thaw_early(struct device*);
+static int i2c_mpu6050_pm_poweroff(struct device*);
+static int i2c_mpu6050_pm_poweroff_late(struct device*);
+static int i2c_mpu6050_pm_restore(struct device*);
+static int i2c_mpu6050_pm_restore_early(struct device*);
+//
+static int i2c_mpu6050_pm_suspend_noirq(struct device*);
+static int i2c_mpu6050_pm_resume_noirq(struct device*);
+static int i2c_mpu6050_pm_freeze_noirq(struct device*);
+static int i2c_mpu6050_pm_thaw_noirq(struct device*);
+static int i2c_mpu6050_pm_poweroff_noirq(struct device*);
+static int i2c_mpu6050_pm_restore_noirq(struct device*);
+//
+static int i2c_mpu6050_pm_runtime_suspend(struct device*);
+static int i2c_mpu6050_pm_runtime_resume(struct device*);
+static int i2c_mpu6050_pm_runtime_idle(struct device*);
+
+static int i2c_mpu6050_attach_adapter(struct i2c_adapter*);
+static int i2c_mpu6050_detach_adapter(struct i2c_adapter*);
 static int i2c_mpu6050_probe(struct i2c_client*, const struct i2c_device_id*);
 static int i2c_mpu6050_remove(struct i2c_client*);
+static void i2c_mpu6050_shutdown(struct i2c_client*);
+static int i2c_mpu6050_suspend(struct i2c_client*, pm_message_t);
+static int i2c_mpu6050_resume(struct i2c_client*);
+
+static void i2c_mpu6050_alert(struct i2c_client*, unsigned int);
+
+static int i2c_mpu6050_command(struct i2c_client*, unsigned int, void*);
+
+static int i2c_mpu6050_detect(struct i2c_client*, struct i2c_board_info*);
+
+//static int chip_detect(struct i2c_adapter*, int, int);
+
 static int i2c_mpu6050_init(void);
 static void i2c_mpu6050_exit(void);

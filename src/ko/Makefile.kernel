@@ -1,8 +1,31 @@
-obj-m = $(module_DATA)
-MI_OBJS = $(module_DATA)
+obj-m += olimex_mod_mpu6050.o
+MI_OBJS         := olimex_mod_mpu6050.o
 
-ccflags-y = $(automake_dummy_CFLAGS)
+KERNEL_LOCATION := /home/esohns/Projects/A10/linux-sunxi
+export KERNEL_LOCATION
+PWD             := $(dir $(lastword $(MAKEFILE_LIST)))
+ccflags-y       := \
+  -I$(KERNEL_LOCATION)/include \
+  -I$(KERNEL_LOCATION)/arch/arm/include \
+  -I$(KERNEL_LOCATION)/arch/arm/mach-sun4i/include \
+  -I$(KERNEL_LOCATION)/arch/arm/plat-sunxi/include \
+  -I$(KERNEL_LOCATION)/arch/sh/include \
+  -I$(PWD)/3rd_party/i2cdevlib \
+  -I$(PWD)/3rd_party/msp430
 
-all clean:
-	mv Makefile.automake Makefile
-	$(MAKE) $@
+#KDIR           := /lib/modules/$(shell uname -r)/build
+#EXTRA_CFLAGS  += $(shell rtai-config --module-cflags)
+#export EXTRA_CFLAGS
+
+ARCH            := arm
+CROSS_COMPILE   := arm-linux-gnu-
+KBUILD_VERBOSE  := 1
+
+all:
+	$(MAKE) -C $(KERNEL_LOCATION) M=$(PWD) modules \
+KBUILD_VERBOSE=$(KBUILD_VERBOSE) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) \
+V=$(KBUILD_VERBOSE)
+#	$(MAKE) -C $(KDIR) M=$(PWD) modules
+clean :
+	$(MAKE) -C $(KERNEL_LOCATION) M=$(PWD) clean
+#	$(MAKE) -C $(KDIR) M=$(PWD) clean
