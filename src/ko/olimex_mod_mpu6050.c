@@ -375,7 +375,7 @@ i2c_mpu6050_intstate_show(struct kobject* kobj_in,
 {
   struct i2c_client* client_p;
   int gpio;
-  
+
   client_p = kobj_to_i2c_client(kobj_in);
   if (!client_p) {
     printk(KERN_ERR "%s: invalid parameter (not a I2C device ?)\n", __func__);
@@ -635,12 +635,40 @@ i2c_mpu6050_detach_adapter(struct i2c_adapter* adapter_in)
 }
 
 // this function gets called when a matching modalias and driver name found
+static struct __initdata i2c_board_info i2c_mpu6050_board_infos[] = {
+  {
+    I2C_BOARD_INFO(KO_OLIMEX_MOD_MPU6050_DRIVER_NAME, MPU6050_DEFAULT_ADDRESS),
+//    .type = ,
+    .flags = 0,
+//    .addr = ,
+    .platform_data = NULL,
+    .archdata = NULL,
+    .of_node = NULL,
+//    .irq = gpio_to_irq(GPIO_UEXT4_UART4RX_PG11_PIN),
+  },
+};
+static unsigned short normal_i2c[] = {
+  MPU6050_ADDRESS_AD0_LOW,
+  MPU6050_ADDRESS_AD0_HIGH,
+  I2C_CLIENT_END
+};
+//static unsigned short normal_i2c_range[] = {
+//  0x00, 0xff,
+//  I2C_CLIENT_END
+//};
+//static unsigned int normal_isa[] = {
+//  I2C_CLIENT_ISA_END
+//};
+//static unsigned int normal_isa_range[] = {
+//  I2C_CLIENT_ISA_END
+//};
 static int __devinit i2c_mpu6050_probe(struct i2c_client* client_in,
                                        const struct i2c_device_id* id_in)
 {
   int err, gpio_used;
+  struct i2c_client* client_p;
   struct i2c_mpu6050_client_data_t* client_data_p;
-  struct gpio_chip* gpio_chip_p;
+//  struct gpio_chip* gpio_chip_p;
 
   printk(KERN_DEBUG "i2c_mpu6050_probe() called.\n");
 
@@ -650,6 +678,14 @@ static int __devinit i2c_mpu6050_probe(struct i2c_client* client_in,
                                 I2C_FUNC_SMBUS_WORD_DATA |
                                 I2C_FUNC_SMBUS_I2C_BLOCK))) {
     printk(KERN_ERR "%s: needed i2c functionality is not supported\n", __func__);
+    return -ENODEV;
+  }
+  client_p = i2c_new_probed_device(client_in->adapter,
+                                   &i2c_mpu6050_board_infos[0],
+                                   normal_i2c,
+                                   NULL);
+  if (IS_ERR(client_p)) {
+    printk(KERN_ERR "%s: i2c_new_probed_device() failed\n", __func__);
     return -ENODEV;
   }
 
@@ -925,24 +961,24 @@ static int __devinit i2c_mpu6050_probe(struct i2c_client* client_in,
          GPIO_UEXT4_UART4RX_PG11_LABEL,
          GPIO_UEXT4_UART4RX_PG11_PIN,
          client_data_p->client->irq);
-  gpio_chip_p = gpio_to_chip(GPIO_UEXT4_UART4RX_PG11_PIN);
-  if (!gpio_chip_p) {
-    printk(KERN_ERR "unable to retrieve GPIO chip: %d\n",
-           GPIO_UEXT4_UART4RX_PG11_PIN);
+//  gpio_chip_p = gpio_to_chip(GPIO_UEXT4_UART4RX_PG11_PIN);
+//  if (!gpio_chip_p) {
+//    printk(KERN_ERR "unable to retrieve GPIO chip: %d\n",
+//           GPIO_UEXT4_UART4RX_PG11_PIN);
 
-    // clean up
-    gpio_unexport(GPIO_UEXT4_UART4RX_PG11_PIN);
-    gpio_release(client_data_p->gpio_led_handle, 1);
-    devm_gpio_free(&client_in->dev,
-                   GPIO_UEXT4_UART4RX_PG11_PIN);
-    //    devm_pinctrl_put(client_data_p->pin_ctrl);
-    pinctrl_put(client_data_p->pin_ctrl);
-    destroy_workqueue(client_data_p->workqueue);
-    kobject_del(client_data_p->object);
-    kfree(client_data_p);
+//    // clean up
+//    gpio_unexport(GPIO_UEXT4_UART4RX_PG11_PIN);
+//    gpio_release(client_data_p->gpio_led_handle, 1);
+//    devm_gpio_free(&client_in->dev,
+//                   GPIO_UEXT4_UART4RX_PG11_PIN);
+//    //    devm_pinctrl_put(client_data_p->pin_ctrl);
+//    pinctrl_put(client_data_p->pin_ctrl);
+//    destroy_workqueue(client_data_p->workqueue);
+//    kobject_del(client_data_p->object);
+//    kfree(client_data_p);
 
-    return -EIO;
-  }
+//    return -EIO;
+//  }
 //  err = gpio_lock_as_irq(gpio_chip_p,
 //                         GPIO_UEXT4_UART4RX_PG11_PIN);
 //  if (err) {
@@ -985,13 +1021,15 @@ static int __devinit i2c_mpu6050_probe(struct i2c_client* client_in,
     return -EIO;
   }
 
+  dev_info(&client_data_p->client->dev, "%s created\n", KO_OLIMEX_MOD_MPU6050_DRIVER_NAME);
+
   return 0;
 }
 // this function gets called when our example SPI driver gets removed with spi_unregister_driver()
 static int i2c_mpu6050_remove(struct i2c_client* client_in)
 {
   struct i2c_mpu6050_client_data_t* client_data_p = NULL;
-  struct gpio_chip* gpio_chip_p;
+//  struct gpio_chip* gpio_chip_p;
 
   printk(KERN_DEBUG "i2c_mpu6050_remove() called.\n");
 
@@ -1001,12 +1039,12 @@ static int i2c_mpu6050_remove(struct i2c_client* client_in)
     return -ENODEV;
   }
 
-  gpio_chip_p = gpio_to_chip(GPIO_UEXT4_UART4RX_PG11_PIN);
-  if (!gpio_chip_p) {
-    printk(KERN_ERR "unable to retrieve GPIO chip: %d\n",
-           GPIO_UEXT4_UART4RX_PG11_PIN);
-    return -ENODEV;
-  }
+//  gpio_chip_p = gpio_to_chip(GPIO_UEXT4_UART4RX_PG11_PIN);
+//  if (!gpio_chip_p) {
+//    printk(KERN_ERR "unable to retrieve GPIO chip: %d\n",
+//           GPIO_UEXT4_UART4RX_PG11_PIN);
+//    return -ENODEV;
+//  }
 
   // clean up
 //  gpiochip_unlock_as_irq(gpio_chip_p,
@@ -1086,22 +1124,6 @@ i2c_mpu6050_detect(struct i2c_client* client_in, struct i2c_board_info* info_in)
                    KO_OLIMEX_MOD_MPU6050_DRIVER_NAME) == 0) ? 0
                                                             : -ENODEV);
 }
-
-static unsigned short normal_i2c[] = {
-  MPU6050_ADDRESS_AD0_LOW,
-  MPU6050_ADDRESS_AD0_HIGH,
-  I2C_CLIENT_END
-};
-//static unsigned short normal_i2c_range[] = {
-//  0x00, 0xff,
-//  I2C_CLIENT_END
-//};
-//static unsigned int normal_isa[] = {
-//  I2C_CLIENT_ISA_END
-//};
-//static unsigned int normal_isa_range[] = {
-//  I2C_CLIENT_ISA_END
-//};
 
 //static struct list_head i2c_mpu6050_clients;
 static struct i2c_driver i2c_mpu6050_i2c_driver = {
@@ -1212,18 +1234,6 @@ static struct i2c_driver i2c_mpu6050_i2c_driver = {
 //}
 
 // this gets called on module init
-static struct i2c_board_info i2c_mpu6050_board_infos[] = {
-  {
-    I2C_BOARD_INFO(KO_OLIMEX_MOD_MPU6050_DRIVER_NAME, MPU6050_DEFAULT_ADDRESS),
-//    .type = ,
-    .flags = 0,
-//    .addr = ,
-    .platform_data = NULL,
-    .archdata = NULL,
-    .of_node = NULL,
-//    .irq = gpio_to_irq(GPIO_UEXT4_UART4RX_PG11_PIN),
-  },
-};
 static const struct regmap_config i2c_mpu6050_regmap_config = {
   .reg_bits = 8,
   .val_bits = 8,
@@ -1243,12 +1253,12 @@ static int __init i2c_mpu6050_init(void)
   }
 
   i2c_mpu6050_board_infos[0].irq = gpio_to_irq(GPIO_UEXT4_UART4RX_PG11_PIN);
-  error = i2c_register_board_info(0,
-                                  ARRAY_AND_SIZE(i2c_mpu6050_board_infos));
-  if (error < 0) {
-    printk(KERN_ERR "i2c_register_board_info() failed %d\n", error);
-    return error;
-  }
+//  error = i2c_register_board_info(0,
+//                                  ARRAY_AND_SIZE(i2c_mpu6050_board_infos));
+//  if (error < 0) {
+//    printk(KERN_ERR "i2c_register_board_info() failed %d\n", error);
+//    return error;
+//  }
 
   memset(buffer, 0, sizeof(buffer));
   strcpy(buffer, KO_OLIMEX_MOD_MPU6050_DESCRIPTION);
