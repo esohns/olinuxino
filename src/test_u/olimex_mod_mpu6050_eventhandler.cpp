@@ -103,7 +103,7 @@ Olimex_Mod_MPU6050_EventHandler::notify (Stream_SessionId_t sessionID_in,
       // no message buffer available --> discard message
       //ACE_DEBUG ((LM_DEBUG,
       //            ACE_TEXT ("Olimex_Mod_MPU6050_Message::duplicate() failed, continuing\n")));
-      sessionData_->currentStatistic.droppedMessages++;
+      sessionData_->currentStatistic.droppedFrames++;
 
       return;
     } // end IF

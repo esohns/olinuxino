@@ -39,10 +39,14 @@ if (UNIX)
  find_library (GLUT_LIBRARY ${GLUT_LIB_FILE}
                DOC "searching for ${GLUT_LIB_FILE} (system paths)")
 elseif (WIN32)
- set (GLUT_LIB_FILE freeglut.lib)
+ set (GLUT_LIB_FILE freeglut)
+ if (CMAKE_BUILD_TYPE STREQUAL Debug)
+  set (LIB_FILE_SUFFIX d)
+ endif ()
+ set (GLUT_LIB_FILE ${GLUT_LIB_FILE}${LIB_FILE_SUFFIX}.lib)
+ message (STATUS "${GLUT_LIB_FILE} search path: \"${CMAKE_CURRENT_SOURCE_DIR}/../../../FreeGLUT/freeglut/freeglut/cmake/lib/${CMAKE_BUILD_TYPE}\"")
  find_library (GLUT_LIBRARY ${GLUT_LIB_FILE}
-               PATHS ${CMAKE_CURRENT_SOURCE_DIR}/../../../freeglut
-               PATH_SUFFIXES lib
+               PATHS ${CMAKE_CURRENT_SOURCE_DIR}/../../../FreeGLUT/freeglut/freeglut/cmake/lib/${CMAKE_BUILD_TYPE}
                DOC "searching for ${GLUT_LIB_FILE}")
 endif ()
 #if (NOT EXISTS GLUT_LIBRARY)

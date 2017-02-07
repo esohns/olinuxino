@@ -387,7 +387,7 @@ configure_cb (GtkWidget* widget_in,
       is_first_invokation = false;
       return G_SOURCE_REMOVE;
     } // end IF
-  } // end lock scope
+  } // end IF
 
   glMatrixMode (GL_PROJECTION);
   // specify the lower left corner, as well as width/height of the viewport
@@ -560,8 +560,7 @@ expose_cb (GtkWidget* widget_in,
   } // end IF
 
   // step1: clear screen
-  glClear (GL_COLOR_BUFFER_BIT |
-           GL_DEPTH_BUFFER_BIT);
+  glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
   // step2: set camera
   glPushMatrix ();
@@ -833,7 +832,7 @@ process_cb (gpointer userData_in)
     static_cast<gfloat> (cb_data_p->temperatureIndex);
   cb_data_p->temperature[(cb_data_p->temperatureIndex * 2) + 1] =
     ((t + OLIMEX_MOD_MPU6050_THERMOMETER_OFFSET) /
-    OLIMEX_MOD_MPU6050_THERMOMETER_RANGE) *
+     OLIMEX_MOD_MPU6050_THERMOMETER_RANGE) *
     OLIMEX_MOD_MPU6050_UI_WIDGET_CURVE_MAXIMUM_Y;
   //gtk_curve_set_range (curve_p,
   //                     0.0F,

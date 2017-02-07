@@ -308,6 +308,6 @@ Olimex_Mod_MPU6050_Stream_T<SourceModuleType>::report () const
               inherited::state_.currentSessionData->sessionID,
               &(inherited::state_.currentSessionData->lastCollectionTimeStamp),
               inherited::state_.currentSessionData->currentStatistic.dataMessages,
-              inherited::state_.currentSessionData->currentStatistic.droppedMessages,
+              inherited::state_.currentSessionData->currentStatistic.droppedFrames,
               inherited::state_.currentSessionData->currentStatistic.bytes));
 }
