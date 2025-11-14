@@ -24,7 +24,7 @@
 #include <linux/pinctrl/consumer.h>
 
 // *TODO*: implement devicetree support
-#include <plat/sys_config.h>
+//#include <plat/sys_config.h>
 
 #include "olimex_mod_mpu6050_defines.h"
 #include "olimex_mod_mpu6050_wq.h"
@@ -40,7 +40,7 @@ struct i2c_mpu6050_client_data_t {
   struct pinctrl* pin_ctrl;
 //  struct pinctrl_state* pin_ctrl_state;
 //  script_gpio_set_t gpio_int_data;
-  script_gpio_set_t gpio_led_data;
+//  script_gpio_set_t gpio_led_data;
   unsigned gpio_int_handle;
   unsigned gpio_led_handle;
   struct i2c_client* client;

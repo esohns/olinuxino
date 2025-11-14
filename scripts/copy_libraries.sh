@@ -47,7 +47,7 @@ VERSION="6.3.1"
 echo "copying 3rd-party libraries"
 LIB_DIR="lib"
 MODULES_DIR="${PROJECT_DIR}/modules"
-SUB_DIRS="ATCD/ACE/build/linux"
+SUB_DIRS="ACE/ace"
 #declare -a LIBS=("libACE.so")
 LIBS="libACE.so"
 i=0
@@ -66,15 +66,15 @@ VERSION="0"
 
 echo "copying external module libraries"
 LIB_DIR=".libs"
-SUB_DIRS="modules/libCommon/src
-modules/libCommon/src/ui
-modules/libACEStream/src
-modules/libACEStream/src/modules/misc
-modules/libACEStream/src/modules/net
-modules/libACENetwork/src
-modules/libACENetwork/src/client_server"
+SUB_DIRS="modules/Common/src
+modules/Common/src/ui
+modules/ACEStream/src
+modules/ACEStream/src/modules/misc
+modules/ACEStream/src/modules/net
+modules/ACENetwork/src
+modules/ACENetwork/src/client_server"
 #declare -a LIBS=("libCommon.so"
-LIBS="libCommon.so libCommon_UI.so libACEStream.so libACEStream_Misc.so libACEStream_Net.so libACENetwork.so libACENetwork_Client.so"
+LIBS="libCommon.a libCommon_UI.a libACEStream.a libACEStream_Misc.a libACEStream_Net.a libACENetwork.a libACENetwork_Client.a"
 set -- $LIBS
 #i=0
 for DIR in $SUB_DIRS

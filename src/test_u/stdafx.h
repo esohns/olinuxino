@@ -2,27 +2,28 @@
 //  or project specific include files that are used frequently, but
 //      are changed infrequently
 //
-#if defined _MSC_VER
+#if defined (_MSC_VER)
 #define WIN32_LEAN_AND_MEAN // Exclude rarely-used stuff from Windows headers
-#define _USE_MATH_DEFINES
+//#define _USE_MATH_DEFINES
+
+#include "targetver.h"
 
 // Windows Header Files
-#include <windows.h>
-#endif
+#include "windows.h"
+#endif // _MSC_VER
 
 // System Library Header Files
-#include <ace/OS.h>
-#include <ace/ACE.h>
-#include <ace/Log_Msg.h>
-#include <ace/Assert.h>
-#include <ace/Synch.h>
-#include <ace/Task.h>
-#include <ace/Reactor.h>
-#include <ace/Malloc_Allocator.h>
-#include <ace/Lock_Adapter_T.h>
-#include <ace/Stream.h>
+#include "ace/OS.h"
+#include "ace/ACE.h"
+#include "ace/Assert.h"
+#include "ace/Synch.h"
+#include "ace/Task.h"
+#include "ace/Reactor.h"
+#include "ace/Malloc_Allocator.h"
+#include "ace/Lock_Adapter_T.h"
+#include "ace/Stream.h"
 
-// C RunTime Header Files
+// C++ RunTime Header Files
 #include <string>
 #include <map>
 #include <vector>
@@ -31,5 +32,3 @@
 #include <iostream>
 #include <sstream>
 #include <functional>
-
-#define LIGBGLADE_SUPPORT

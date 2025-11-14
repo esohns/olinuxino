@@ -33,33 +33,33 @@ PROJECT_ROOT_MODULES=/mnt/win_d/projects
   PROJECT_ROOT_MODULES=%{project_root}/modules
 %endif
 
-#rm -rf modules/ATCD
-#[ $? -ne 0 ] && echo "ERROR: failed to rm modules/ATCD, aborting" && exit 1
-ATCD_ROOT=$PROJECT_ROOT_MODULES/ATCD
+#rm -rf modules/ACE
+#[ $? -ne 0 ] && echo "ERROR: failed to rm modules/ACE, aborting" && exit 1
+ACE_ROOT=$PROJECT_ROOT_MODULES/ACE
 [ ! -d $ATCD_ROOT ] && echo "ERROR: ATCD project not found, aborting" && exit 1
-ln -s  $ATCD_ROOT modules/ATCD
+ln -s  $ATCD_ROOT modules/ACE
 [ $? -ne 0 ] && echo "ERROR: failed to link ATCD project, aborting" && exit 1
 
-#rm -rf modules/libCommon
-#[ $? -ne 0 ] && echo "ERROR: failed to rm modules/libCommon, aborting" && exit 1
-LIBCOMMON_ROOT=$PROJECT_ROOT_MODULES/libCommon
-[ ! -d $LIBCOMMON_ROOT ] && echo "ERROR: libCommon project not found, aborting" && exit 1
-ln -s  $LIBCOMMON_ROOT modules/libCommon
-[ $? -ne 0 ] && echo "ERROR: failed to link libCommon project, aborting" && exit 1
+#rm -rf modules/Common
+#[ $? -ne 0 ] && echo "ERROR: failed to rm modules/Common, aborting" && exit 1
+COMMON_ROOT=$PROJECT_ROOT_MODULES/Common
+[ ! -d $LIBCOMMON_ROOT ] && echo "ERROR: Common project not found, aborting" && exit 1
+ln -s  $LIBCOMMON_ROOT modules/Common
+[ $? -ne 0 ] && echo "ERROR: failed to link Common project, aborting" && exit 1
 
-#rm -rf modules/libACEStream
-#[ $? -ne 0 ] && echo "ERROR: failed to rm modules/libACEStream, aborting" && exit 1
-LIBACESTREAM_ROOT=$PROJECT_ROOT_MODULES/libACEStream
-[ ! -d $LIBACESTREAM_ROOT ] && echo "ERROR: libACEStream project not found, aborting" && exit 1
-ln -s  $LIBACESTREAM_ROOT modules/libACEStream
-[ $? -ne 0 ] && echo "ERROR: failed to link libACEStream project, aborting" && exit 1
+#rm -rf modules/ACEStream
+#[ $? -ne 0 ] && echo "ERROR: failed to rm modules/ACEStream, aborting" && exit 1
+ACESTREAM_ROOT=$PROJECT_ROOT_MODULES/ACEStream
+[ ! -d $ACESTREAM_ROOT ] && echo "ERROR: ACEStream project not found, aborting" && exit 1
+ln -s  $ACESTREAM_ROOT modules/ACEStream
+[ $? -ne 0 ] && echo "ERROR: failed to link ACEStream project, aborting" && exit 1
 
-#rm -rf modules/libACENetwork
-#[ $? -ne 0 ] && echo "ERROR: failed to rm modules/libACENetwork, aborting" && exit 1
-LIBACENETWORK_ROOT=$PROJECT_ROOT_MODULES/libACENetwork
-[ ! -d $LIBACENETWORK_ROOT ] && echo "ERROR: libACENetwork project not found, aborting" && exit 1
-ln -s  $LIBACENETWORK_ROOT modules/libACENetwork
-[ $? -ne 0 ] && echo "ERROR: failed to link libACENetwork project, aborting" && exit 1
+#rm -rf modules/ACENetwork
+#[ $? -ne 0 ] && echo "ERROR: failed to rm modules/ACENetwork, aborting" && exit 1
+ACENETWORK_ROOT=$PROJECT_ROOT_MODULES/ACENetwork
+[ ! -d $ACENETWORK_ROOT ] && echo "ERROR: ACENetwork project not found, aborting" && exit 1
+ln -s  $ACENETWORK_ROOT modules/ACENetwork
+[ $? -ne 0 ] && echo "ERROR: failed to link ACENetwork project, aborting" && exit 1
 
 #./autogen.sh
 
@@ -104,4 +104,3 @@ rm -rf %{buildroot}
 %{_datadir}/%{name}/*
 
 %changelog
-

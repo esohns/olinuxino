@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 2.8)
+cmake_minimum_required (VERSION 3.5)
 
 # options
 #set (CMAKE_VERBOSE_MAKEFILE ON)
@@ -79,6 +79,7 @@ configure_file (${CMAKE_CURRENT_SOURCE_DIR}/config.h.in.cmake
 #add_custom_target (${PROJECT_NAME}_config)
 #set_target_properties (${PROJECT_NAME}_config PROPERTIES
 #                       PUBLIC_HEADER "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_config.h")
+add_definitions (-DHAVE_CONFIG_H)
 
 install (FILES "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}_config.h"
          DESTINATION "${INSTALL_INCLUDE_DIR}/${PROJECT_NAME}"
@@ -125,7 +126,7 @@ endif ()
 
 if (CMAKE_COMPILER_IS_GNUCXX)
  add_compile_options (-ansi)
- add_compile_options (-std=c++11)
+ add_compile_options (-std=c++17)
  add_compile_options (-Wall)
  set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS} -g")
  add_definitions (-D_GNU_SOURCE)

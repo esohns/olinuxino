@@ -17,43 +17,53 @@
 
 #include "stdafx.h"
 
+#if defined (VALGRIND_USE)
+#include "valgrind/memcheck.h"
+#endif // VALGRIND_USE
+
 #include <iostream>
 #include <sstream>
 
 #if defined (ENABLE_NLS)
-#include <locale.h>
-#include <libintl.h>
-#endif
-#include <gettext.h>
+#include "locale.h"
+#include "libintl.h"
+#endif // ENABLE_NLS
 
-#if defined (OLINUXINO_ENABLE_VALGRIND_SUPPORT)
-#include <valgrind/memcheck.h>
-#endif
-
-#include <ace/ACE.h>
-#include <ace/Get_Opt.h>
-#if defined (ACE_WIN32) || defined (ACE_WIN64)
-#include <ace/Init_ACE.h>
-#endif
-#include <ace/Log_Msg.h>
-#include <ace/OS.h>
-#include <ace/OS_main.h>
 #if defined (ACE_WIN32) || defined (ACE_WIN64)
 #else
-#include <ace/POSIX_Proactor.h>
-#endif
-#include <ace/Profile_Timer.h>
-#include <ace/Time_Value.h>
+#include "gettext.h"
+#endif // ACE_WIN32 || ACE_WIN64
 
+#include "ace/ACE.h"
+#include "ace/Get_Opt.h"
+#if defined (ACE_WIN32) || defined (ACE_WIN64)
+#include "ace/Init_ACE.h"
+#endif
+#include "ace/Log_Msg.h"
+#include "ace/OS.h"
+#include "ace/OS_main.h"
+#if defined (ACE_WIN32) || defined (ACE_WIN64)
+#else
+#include "ace/POSIX_Proactor.h"
+#endif
+#include "ace/Profile_Timer.h"
+#include "ace/Time_Value.h"
+
+#if defined (HAVE_CONFIG_H)
 #include "olinuxino_config.h"
+#endif // HAVE_CONFIG_H
 
 #include "common_defines.h"
 #include "common_file_tools.h"
-#include "common_tools.h"
+
+#include "common_event_tools.h"
+
+#include "common_log_tools.h"
 
 #include "common_ui_defines.h"
-#include "common_ui_glade_definition.h"
-#include "common_ui_gtk_manager.h"
+// #include "common_ui_glade_definition.h"
+#include "common_ui_gtk_manager_common.h"
+#include "common_ui_gtk_builder_definition.h"
 
 #include "stream_allocatorheap.h"
 
@@ -66,11 +76,13 @@
 #include "olimex_mod_mpu6050_defines.h"
 #include "olimex_mod_mpu6050_eventhandler.h"
 #include "olimex_mod_mpu6050_macros.h"
-#include "olimex_mod_mpu6050_module_eventhandler.h"
 #include "olimex_mod_mpu6050_network.h"
 #include "olimex_mod_mpu6050_signalhandler.h"
 #include "olimex_mod_mpu6050_stream.h"
 #include "olimex_mod_mpu6050_types.h"
+
+const char stream_name_io_string_[] = ACE_TEXT_ALWAYS_CHAR ("NetIOStream");
+const char stream_name_string_[] = ACE_TEXT_ALWAYS_CHAR ("Stream");
 
 void
 do_printVersion (const std::string& programName_in)
@@ -163,7 +175,7 @@ do_printUsage (const std::string& programName_in)
             << std::endl;
   std::string path = configuration_path;
   path += ACE_DIRECTORY_SEPARATOR_CHAR_A;
-  path += ACE_TEXT_ALWAYS_CHAR (COMMON_LOCATION_CONFIGURATION_DIRECTORY);
+  path += ACE_TEXT_ALWAYS_CHAR (COMMON_LOCATION_CONFIGURATION_SUBDIRECTORY);
   std::string UI_file = path;
   UI_file += ACE_DIRECTORY_SEPARATOR_CHAR_A;
   UI_file += ACE_TEXT_ALWAYS_CHAR (OLIMEX_MOD_MPU6050_UI_DEFINITION_FILE_NAME);
@@ -218,7 +230,7 @@ do_processArguments (int argc_in,
   traceInformation_out        = false;
   std::string path = configuration_path;
   path += ACE_DIRECTORY_SEPARATOR_CHAR_A;
-  path += ACE_TEXT_ALWAYS_CHAR (COMMON_LOCATION_CONFIGURATION_DIRECTORY);
+  path += ACE_TEXT_ALWAYS_CHAR (COMMON_LOCATION_CONFIGURATION_SUBDIRECTORY);
   interfaceDefinitionFile_out = path;
   interfaceDefinitionFile_out += ACE_DIRECTORY_SEPARATOR_CHAR_A;
   interfaceDefinitionFile_out +=
@@ -457,7 +469,7 @@ do_work (int argc_in,
          bool useReactor_in,
          const std::string& interfaceDefinitionFile_in,
          ////////////////////////////////
-         Olimex_Mod_MPU6050_GtkCBData& CBData_in,
+         struct Olimex_Mod_MPU6050_GTK_CBData& CBData_in,
          ////////////////////////////////
          const ACE_Sig_Set& signalSet_in,
          const ACE_Sig_Set& ignoredSignalSet_in,
@@ -468,37 +480,29 @@ do_work (int argc_in,
   int result = false;
 
   // step1: initialize configuration data
-  Olimex_Mod_MPU6050_Configuration configuration;
+  struct Olimex_Mod_MPU6050_Configuration configuration;
 #if defined (ACE_WIN32) || defined (ACE_WIN64)
 #else
-  Olimex_Mod_MPU6050_NetlinkConfiguration netlink_configuration;
+  struct Olimex_Mod_MPU6050_NetlinkConfiguration netlink_configuration;
 #endif
-  Olimex_Mod_MPU6050_UserData user_data;
+  struct Olimex_Mod_MPU6050_UserData user_data;
   user_data.configuration = &configuration;
 #if defined (ACE_WIN32) || defined (ACE_WIN64)
 #else
-  Olimex_Mod_MPU6050_NetlinkUserData netlink_user_data;
+  struct Olimex_Mod_MPU6050_NetlinkUserData netlink_user_data;
   netlink_user_data.configuration = &netlink_configuration;
 #endif
 
   Olimex_Mod_MPU6050_EventHandler event_handler (&CBData_in,
                                                  interfaceDefinitionFile_in.empty ());
-  std::string module_name = ACE_TEXT_ALWAYS_CHAR ("EventHandler");
-  Olimex_Mod_MPU6050_Module_EventHandler_Module event_handler_module (module_name,
-                                                                      NULL);
-  Olimex_Mod_MPU6050_Module_EventHandler* event_handler_impl = NULL;
-  event_handler_impl =
-      dynamic_cast<Olimex_Mod_MPU6050_Module_EventHandler*> (event_handler_module.writer ());
-  if (!event_handler_impl)
-  {
-    ACE_DEBUG ((LM_ERROR,
-                ACE_TEXT ("dynamic_cast<Olimex_Mod_MPU6050_Module_EventHandler> failed, returning\n")));
-    return;
-  } // end IF
-  event_handler_impl->initialize ();
-  event_handler_impl->subscribe (&event_handler);
+  std::string module_name = ACE_TEXT_ALWAYS_CHAR ("MessageHandler");
+  Olimex_Mod_MPU6050_Module_MessageHandler_Module event_handler_module (NULL,
+                                                                        module_name.c_str ());
 
-  Stream_AllocatorHeap_T<Stream_AllocatorConfiguration> heap_allocator;
+  Stream_AllocatorHeap_T<ACE_MT_SYNCH,
+                         struct Stream_AllocatorConfiguration> heap_allocator;
+  struct Stream_AllocatorConfiguration allocator_configuration;
+  heap_allocator.initialize (allocator_configuration);
   Olimex_Mod_MPU6050_MessageAllocator_t message_allocator (OLIMEX_MOD_MPU6050_MAXIMUM_NUMBER_OF_INFLIGHT_MESSAGES,
                                                            &heap_allocator,
                                                            true); // block
@@ -506,190 +510,137 @@ do_work (int argc_in,
   Olimex_Mod_MPU6050_ConnectionManager_t* connectionManager_p =
     OLIMEX_MOD_MPU6050_CONNECTIONMANAGER_SINGLETON::instance ();
   ACE_ASSERT (connectionManager_p);
-  connectionManager_p->initialize (std::numeric_limits<unsigned int>::max ());
+  connectionManager_p->initialize (std::numeric_limits<unsigned int>::max (),
+                                   ACE_Time_Value::zero);
 #if defined (ACE_WIN32) || defined (ACE_WIN64)
 #else
   Olimex_Mod_MPU6050_NetlinkConnectionManager_t* netlinkConnectionManager_p =
     OLIMEX_MOD_MPU6050_NETLINKCONNECTIONMANAGER_SINGLETON::instance ();
   ACE_ASSERT (netlinkConnectionManager_p);
   if (!clientMode_in)
-    netlinkConnectionManager_p->initialize (std::numeric_limits<unsigned int>::max ());
+    netlinkConnectionManager_p->initialize (std::numeric_limits<unsigned int>::max (),
+                                            ACE_Time_Value::zero);
 #endif
 
   Olimex_Mod_MPU6050_Stream_t stream;
   Olimex_Mod_MPU6050_AsynchStream_t asynch_stream;
 
   // ******************* socket configuration data ****************************
-  configuration.socketConfiguration.address = peerAddress_in;
-  configuration.socketConfiguration.bufferSize =
+  configuration.connectionConfiguration.allocatorConfiguration =
+    &allocator_configuration;
+  configuration.connectionConfiguration.socketConfiguration.peerAddress =
+    peerAddress_in;
+  configuration.connectionConfiguration.socketConfiguration.bufferSize =
     OLIMEX_MOD_MPU6050_SOCKET_RECEIVE_BUFFER_SIZE;
+  configuration.connectionConfiguration.streamConfiguration =
+    &configuration.streamConfiguration;
 #if defined (ACE_WIN32) || defined (ACE_WIN64)
 #else
-  configuration.socketConfiguration.netlinkAddress = netlinkAddress_in;
-  configuration.socketConfiguration.netlinkProtocol =
+  netlink_configuration.connectionConfiguration.socketConfiguration.address =
+    netlinkAddress_in;
+  netlink_configuration.connectionConfiguration.socketConfiguration.protocol =
     OLIMEX_MOD_MPU6050_NETLINK_PROTOCOL;
+  netlink_configuration.connectionConfiguration.streamConfiguration =
+    &netlink_configuration.streamConfiguration;
 #endif
-  //  configuration.socketConfiguration.useLoopbackDevice = false;
 
-  configuration.socketHandlerConfiguration.messageAllocator =
+  configuration.connectionConfiguration.messageAllocator =
     &message_allocator;
-  configuration.socketHandlerConfiguration.PDUSize =
-    OLIMEX_MOD_MPU6050_STREAM_BUFFER_SIZE;
-  configuration.socketHandlerConfiguration.socketConfiguration =
-    &configuration.socketConfiguration;
-  configuration.socketHandlerConfiguration.statisticReportingInterval =
+  configuration.connectionConfiguration.statisticReportingInterval =
     OLIMEX_MOD_MPU6050_STATISTICS_REPORTING_INTERVAL;
-  configuration.socketHandlerConfiguration.userData = &user_data;
+  configuration.connectionConfiguration.userData = &user_data;
+  configuration.connectionConfiguration.useThreadPerConnection = false;
 
   // ******************** stream configuration data ***************************
-  configuration.moduleHandlerConfiguration.streamConfiguration =
-    &configuration.streamConfiguration;
-
   configuration.moduleHandlerConfiguration.connectionManager =
     connectionManager_p;
   configuration.moduleHandlerConfiguration.consoleMode =
     interfaceDefinitionFile_in.empty ();
-  configuration.moduleHandlerConfiguration.socketConfiguration =
-    &configuration.socketConfiguration;
-  configuration.moduleHandlerConfiguration.socketHandlerConfiguration =
-    &configuration.socketHandlerConfiguration;
+  Stream_Net_StreamConnectionConfigurations_t connection_configurations_a;
+  configuration.moduleHandlerConfiguration.connectionConfigurations =
+    &connection_configurations_a;
   configuration.moduleHandlerConfiguration.stream = &stream;
   if (!useReactor_in)
     configuration.moduleHandlerConfiguration.stream = &asynch_stream;
+  configuration.moduleHandlerConfiguration.subscriber = &event_handler;
 
-  configuration.streamConfiguration.messageAllocator = &message_allocator;
-  configuration.streamConfiguration.bufferSize =
-    OLIMEX_MOD_MPU6050_STREAM_BUFFER_SIZE;
-  configuration.streamConfiguration.useThreadPerConnection = false;
-  configuration.streamConfiguration.notificationStrategy = NULL;
-  configuration.streamConfiguration.module = &event_handler_module;
-  configuration.streamConfiguration.moduleConfiguration =
-    &configuration.moduleConfiguration;
-  configuration.streamConfiguration.moduleHandlerConfiguration =
-    &configuration.moduleHandlerConfiguration;
-  configuration.streamConfiguration.statisticReportingInterval =
-    OLIMEX_MOD_MPU6050_STATISTICS_REPORTING_INTERVAL;
-  configuration.streamConfiguration.printFinalReport = false;
+  struct Olimex_Mod_MPU6050_StreamConfiguration stream_configuration_s;
+  stream_configuration_s.messageAllocator = &message_allocator;
+  stream_configuration_s.notificationStrategy = NULL;
+  stream_configuration_s.module = &event_handler_module;
+  stream_configuration_s.printFinalReport = false;
+  configuration.streamConfiguration.initialize (configuration.moduleConfiguration,
+                                                configuration.moduleHandlerConfiguration,
+                                                stream_configuration_s);
+#if defined (ACE_WIN32) || defined (ACE_WIN64)
+#else
+  struct Olimex_Mod_MPU6050_NetlinkStreamConfiguration netlink_stream_configuration_s;
+  netlink_stream_configuration_s.messageAllocator = &message_allocator;
+  netlink_stream_configuration_s.notificationStrategy = NULL;
+  netlink_stream_configuration_s.module = &event_handler_module;
+  netlink_stream_configuration_s.printFinalReport = false;
+  netlink_configuration.streamConfiguration.initialize (netlink_configuration.moduleConfiguration,
+                                                        netlink_configuration.moduleHandlerConfiguration,
+                                                        netlink_stream_configuration_s);
+#endif
 
   configuration.userData = &user_data;
 
   // step2: initialize connection manager
-  Olimex_Mod_MPU6050_Configuration configuration_2 = configuration;
-  configuration_2.streamConfiguration.module = NULL;
-  connectionManager_p->set (configuration_2,
+  struct Olimex_Mod_MPU6050_Configuration configuration_2;
+  configuration_2.connectionConfiguration =
+    configuration.connectionConfiguration;
+  configuration_2.connectionConfiguration.streamConfiguration =
+    &configuration_2.streamConfiguration;
+  configuration_2.moduleHandlerConfiguration =
+    configuration.moduleHandlerConfiguration;
+  struct Olimex_Mod_MPU6050_StreamConfiguration stream_configuration_2 =
+    stream_configuration_s;
+  stream_configuration_2.module = NULL;
+  configuration_2.streamConfiguration.initialize (configuration_2.moduleConfiguration,
+                                                  configuration_2.moduleHandlerConfiguration,
+                                                  stream_configuration_2);
+  connectionManager_p->set (configuration_2.connectionConfiguration,
                             &user_data); // passed to all handlers
+  connection_configurations_a.insert (std::make_pair (ACE_TEXT_ALWAYS_CHAR ("CamSource"),
+                                                      &configuration_2.connectionConfiguration));
 #if defined (ACE_WIN32) || defined (ACE_WIN64)
 #else
+  Olimex_Mod_MPU6050_NetlinkConfiguration netlink_configuration_2;
+  netlink_configuration_2.connectionConfiguration =
+    netlink_configuration.connectionConfiguration;
+  netlink_configuration_2.connectionConfiguration.streamConfiguration =
+    &netlink_configuration_2.streamConfiguration;
+  netlink_configuration_2.moduleHandlerConfiguration =
+    netlink_configuration.moduleHandlerConfiguration;
+  struct Olimex_Mod_MPU6050_NetlinkStreamConfiguration netlink_stream_configuration_2 =
+    netlink_stream_configuration_s;
+  netlink_stream_configuration_2.module = NULL;
+  netlink_configuration_2.streamConfiguration.initialize (netlink_configuration_2.moduleConfiguration,
+                                                          netlink_configuration_2.moduleHandlerConfiguration,
+                                                          netlink_stream_configuration_2);
   if (!clientMode_in)
   {
-    Olimex_Mod_MPU6050_NetlinkConfiguration netlink_configuration_2 =
-        netlink_configuration;
-    netlink_configuration_2.streamConfiguration.module = NULL;
-    netlinkConnectionManager_p->set (netlink_configuration_2,
+    netlinkConnectionManager_p->set (netlink_configuration_2.connectionConfiguration,
                                      &netlink_user_data); // passed to all handlers
-  } // end ELSE
+  } // end IF
 #endif
 
   // step3: initialize event dispatch
-  Common_ProactorType proactor_type;
-  Common_ReactorType reactor_type;
-  bool serialize_output;
-  if (!Common_Tools::initializeEventDispatch (useReactor_in,
-                                              false,
-                                              1,
-                                              proactor_type,
-                                              reactor_type,
-                                              serialize_output))
+  struct Common_EventDispatchConfiguration dispatch_configuration_s;
+  dispatch_configuration_s.dispatch =
+    useReactor_in ? COMMON_EVENT_DISPATCH_REACTOR : COMMON_EVENT_DISPATCH_PROACTOR;
+  dispatch_configuration_s.numberOfProactorThreads = useReactor_in ? 0 : 1;
+  dispatch_configuration_s.numberOfReactorThreads = useReactor_in ? 1 : 0;
+  if (!Common_Event_Tools::initializeEventDispatch (dispatch_configuration_s))
   {
     ACE_DEBUG ((LM_ERROR,
                 ACE_TEXT ("failed to Common_Tools::initializeEventDispatch(), returning\n")));
     return;
   } // end IF
 
-//  // step4: initialize client connector
-//  Olimex_Mod_MPU6050_IConnector_t* iconnector_p = NULL;
-//#if defined (ACE_WIN32) || defined (ACE_WIN64)
-//#else
-//  Olimex_Mod_MPU6050_INetlinkConnector_t* netlink_iconnector_p = NULL;
-//#endif
-//  if (useReactor_in)
-//  {
-//#if defined (ACE_WIN32) || defined (ACE_WIN64)
-//    ACE_NEW_NORETURN (iconnector_p,
-//                      Olimex_Mod_MPU6050_Connector_t (OLIMEX_MOD_MPU6050_CONNECTIONMANAGER_SINGLETON::instance (),
-//                                                      OLIMEX_MOD_MPU6050_STATISTICS_REPORTING_INTERVAL));
-//#else
-//    if (clientMode_in)
-//      ACE_NEW_NORETURN (iconnector_p,
-//                        Olimex_Mod_MPU6050_Connector_t (OLIMEX_MOD_MPU6050_CONNECTIONMANAGER_SINGLETON::instance (),
-//                                                        OLIMEX_MOD_MPU6050_STATISTICS_REPORTING_INTERVAL));
-//    else
-//      ACE_NEW_NORETURN (netlink_iconnector_p,
-//                        Olimex_Mod_MPU6050_NetlinkConnector_t (OLIMEX_MOD_MPU6050_NETLINKCONNECTIONMANAGER_SINGLETON::instance (),
-//                                                               OLIMEX_MOD_MPU6050_STATISTICS_REPORTING_INTERVAL));
-//#endif
-//  } // end IF
-//  else
-//  {
-//#if defined (ACE_WIN32) || defined (ACE_WIN64)
-//    ACE_NEW_NORETURN (iconnector_p,
-//                      Olimex_Mod_MPU6050_AsynchConnector_t (OLIMEX_MOD_MPU6050_CONNECTIONMANAGER_SINGLETON::instance (),
-//                                                            OLIMEX_MOD_MPU6050_STATISTICS_REPORTING_INTERVAL));
-//#else
-//    if (clientMode_in)
-//      ACE_NEW_NORETURN (iconnector_p,
-//                        Olimex_Mod_MPU6050_AsynchConnector_t (OLIMEX_MOD_MPU6050_CONNECTIONMANAGER_SINGLETON::instance (),
-//                                                              OLIMEX_MOD_MPU6050_STATISTICS_REPORTING_INTERVAL));
-//    else
-//      ACE_NEW_NORETURN (netlink_iconnector_p,
-//                        Olimex_Mod_MPU6050_AsynchNetlinkConnector_t (OLIMEX_MOD_MPU6050_NETLINKCONNECTIONMANAGER_SINGLETON::instance (),
-//                                                                     OLIMEX_MOD_MPU6050_STATISTICS_REPORTING_INTERVAL));
-//#endif
-//  } // end ELSE
-//#if defined (ACE_WIN32) || defined (ACE_WIN64)
-//  if (clientMode_in && !iconnector_p)
-//#else
-//  if (( clientMode_in && !iconnector_p) ||
-//      (!clientMode_in && !netlink_iconnector_p))
-//#endif
-//  {
-//    ACE_DEBUG ((LM_CRITICAL,
-//                ACE_TEXT ("failed to allocate memory, returning\n")));
-//    return;
-//  } // end IF
-//#if defined (ACE_WIN32) || defined (ACE_WIN64)
-//  ACE_ASSERT (iconnector_p);
-//#else
-//  ACE_ASSERT (iconnector_p || netlink_iconnector_p);
-//#endif
-//  if (iconnector_p)
-//    if (!iconnector_p->initialize (configuration.socketHandlerConfiguration))
-//    {
-//      ACE_DEBUG ((LM_ERROR,
-//                  ACE_TEXT ("failed to initialize connector, returning\n")));
-//
-//      // clean up
-//      delete iconnector_p;
-//
-//      return;
-//    } // end IF
-//#if defined (ACE_WIN32) || defined (ACE_WIN64)
-//#else
-//  if (netlink_iconnector_p)
-//    if (!netlink_iconnector_p->initialize (netlink_configuration.socketHandlerConfiguration))
-//    {
-//      ACE_DEBUG ((LM_ERROR,
-//                  ACE_TEXT ("failed to initialize connector, returning\n")));
-//
-//      // clean up
-//      delete netlink_iconnector_p;
-//
-//      return;
-//    } // end IF
-//#endif
-
   // step4: initialize signal handling
-  Olimex_Mod_MPU6050_SignalHandlerConfiguration signalhandler_configuration;
+  struct Olimex_Mod_MPU6050_SignalHandlerConfiguration signalhandler_configuration;
   signalhandler_configuration.consoleMode = interfaceDefinitionFile_in.empty ();
   signalhandler_configuration.peerAddress = peerAddress_in;
   signalhandler_configuration.useReactor = useReactor_in;
@@ -700,24 +651,14 @@ do_work (int argc_in,
                 ACE_TEXT ("failed to initialize signal handler, returning\n")));
     return;
   } // end IF
-  if (!Common_Tools::initializeSignals (signalSet_in,
+  if (!Common_Signal_Tools::initialize (useReactor_in ? COMMON_SIGNAL_DISPATCH_REACTOR : COMMON_SIGNAL_DISPATCH_PROACTOR,
+                                        signalSet_in,
                                         ignoredSignalSet_in,
                                         &signal_handler,
                                         previousSignalActions_inout))
   {
     ACE_DEBUG ((LM_ERROR,
                 ACE_TEXT ("failed to initialize signal handling, returning\n")));
-
-    // clean up
-//#if defined (ACE_WIN32) || defined (ACE_WIN64)
-//    delete iconnector_p;
-//#else
-//    if (clientMode_in)
-//      delete iconnector_p;
-//    else
-//      delete netlink_iconnector_p;
-//#endif
-
     return;
   } // end IF
 
@@ -795,14 +736,9 @@ do_work (int argc_in,
   } // end IF
 
   // step6b: initialize worker(s)
-  int group_id = -1;
-  Common_DispatchThreadData thread_data;
-  thread_data.numberOfDispatchThreads = 1;
-  thread_data.proactorType = proactor_type;
-  thread_data.reactorType = reactor_type;
-  thread_data.useReactor = useReactor_in;
-  if (!Common_Tools::startEventDispatch (thread_data,
-                                         group_id))
+  struct Common_EventDispatchState dispatch_state_s;
+  dispatch_state_s.configuration = &dispatch_configuration_s;
+  if (!Common_Event_Tools::startEventDispatch (dispatch_state_s))
   {
     ACE_DEBUG ((LM_ERROR,
                 ACE_TEXT ("failed to start event dispatch, returning\n")));
@@ -877,8 +813,7 @@ do_work (int argc_in,
 //  }
 
   // step8: dispatch events
-  Common_Tools::dispatchEvents (useReactor_in,
-                                group_id);
+  Common_Event_Tools::dispatchEvents (dispatch_state_s);
 
   // step9: clean up
   configuration.moduleHandlerConfiguration.stream->stop (true);
@@ -967,7 +902,7 @@ ACE_TMAIN (int argc_in,
   bool trace_information      = false;
   std::string path = configuration_path;
   path += ACE_DIRECTORY_SEPARATOR_CHAR_A;
-  path += ACE_TEXT_ALWAYS_CHAR (COMMON_LOCATION_CONFIGURATION_DIRECTORY);
+  path += ACE_TEXT_ALWAYS_CHAR (COMMON_LOCATION_CONFIGURATION_SUBDIRECTORY);
   std::string interface_definition_file = path;
   interface_definition_file += ACE_DIRECTORY_SEPARATOR_CHAR_A;
   interface_definition_file +=
@@ -1039,8 +974,8 @@ ACE_TMAIN (int argc_in,
 #endif
 
   // step3: initialize logging and/or tracing
-  ACE_TCHAR buffer[PATH_MAX];
-  if (!ACE_OS::getcwd (buffer, sizeof (buffer)))
+  ACE_TCHAR buffer_a[PATH_MAX];
+  if (!ACE_OS::getcwd (buffer_a, sizeof (ACE_TCHAR[PATH_MAX])))
   {
     ACE_DEBUG ((LM_ERROR,
                 ACE_TEXT ("failed to ACE_OS::getcwd(): \"%m\", aborting\n")));
@@ -1055,16 +990,17 @@ ACE_TMAIN (int argc_in,
 
     return EXIT_FAILURE;
   } // end IF
-  std::string log_file = buffer;
+  std::string log_file = ACE_TEXT_ALWAYS_CHAR (buffer_a);
   log_file += ACE_DIRECTORY_SEPARATOR_STR;
   log_file += ACE_TEXT_ALWAYS_CHAR (OLIMEX_MOD_MPU6050_LOG_FILE_NAME);
-  if (!log_to_file) log_file.clear ();
-  if (!Common_Tools::initializeLogging (ACE::basename (argv_in[0]),
-                                        log_file,
-                                        false,
-                                        trace_information,
-                                        true,
-                                        NULL))
+  if (!log_to_file)
+    log_file.clear ();
+  if (!Common_Log_Tools::initialize (ACE::basename (argv_in[0]),
+                                     log_file,
+                                     false,
+                                     trace_information,
+                                     true,
+                                     NULL))
   {
     ACE_DEBUG ((LM_ERROR,
                 ACE_TEXT ("failed to initialize logging, aborting\n")));
@@ -1081,40 +1017,25 @@ ACE_TMAIN (int argc_in,
   } // end IF
 
   // step4: (pre-)initialize signal handling
-  ACE_Sig_Set signal_set (0);
-  ACE_Sig_Set ignored_signal_set (0);
+  ACE_Sig_Set signal_set (false);
+  ACE_Sig_Set ignored_signal_set (false);
   do_initializeSignals (use_reactor,
                         true,
                         signal_set,
                         ignored_signal_set);
   Common_SignalActions_t previous_signal_actions;
-  sigset_t previous_signal_mask;
-  result = ACE_OS::sigemptyset (&previous_signal_mask);
-  if (result == -1)
-  {
-    ACE_DEBUG ((LM_ERROR,
-                ACE_TEXT ("failed to ACE_OS::sigemptyset(): \"%m\", aborting\n")));
-
-    Common_Tools::finalizeLogging ();
-    // *PORTABILITY*: on Windows, fini ACE...
-#if defined (ACE_WIN32) || defined (ACE_WIN64)
-    result = ACE::fini ();
-    if (result == -1)
-      ACE_DEBUG ((LM_ERROR,
-                  ACE_TEXT ("failed to ACE::fini(): \"%m\", continuing\n")));
-#endif
-
-    return EXIT_FAILURE;
-  } // end IF
-  if (!Common_Tools::preInitializeSignals (signal_set,
-                                           use_reactor,
+  ACE_Sig_Set previous_signal_mask (false);
+  if (!Common_Signal_Tools::preInitialize (signal_set,
+                                           use_reactor ? COMMON_SIGNAL_DISPATCH_REACTOR : COMMON_SIGNAL_DISPATCH_PROACTOR,
+                                           true,
+                                           false,
                                            previous_signal_actions,
                                            previous_signal_mask))
   {
     ACE_DEBUG ((LM_ERROR,
-                ACE_TEXT ("failed to Common_Tools::preInitializeSignals(), aborting\n")));
+                ACE_TEXT ("failed to Common_Signal_Tools::preInitialize(), aborting\n")));
 
-    Common_Tools::finalizeLogging ();
+    Common_Log_Tools::finalize ();
     // *PORTABILITY*: on Windows, fini ACE...
 #if defined (ACE_WIN32) || defined (ACE_WIN64)
     result = ACE::fini ();
@@ -1137,29 +1058,31 @@ ACE_TMAIN (int argc_in,
 #endif
 
   // step5: initialize GTK UI
-  Olimex_Mod_MPU6050_GtkCBData gtk_cb_data;
-  gtk_cb_data.argc = argc_in;
-  gtk_cb_data.argv = argv_in;
+  struct Olimex_Mod_MPU6050_GTK_CBData gtk_cb_data;
   gtk_cb_data.clientMode = client_mode;
-  ACE_OS::memset (&gtk_cb_data.clientSensorBias,
-                  0,
-                  sizeof (gtk_cb_data.clientSensorBias));
+  ACE_OS::memset (&gtk_cb_data.clientSensorBias, 0, sizeof (struct SensorBias));
   gtk_cb_data.openGLDoubleBuffered =
     OLIMEX_MOD_MPU6050_OPENGL_DOUBLE_BUFFERED;
-  ACE_OS::memset (gtk_cb_data.temperature,
-                  0,
-                  sizeof (gtk_cb_data.temperature));
-  gtk_cb_data.gladeXML[ACE_TEXT_ALWAYS_CHAR (COMMON_UI_GTK_DEFINITION_DESCRIPTOR_MAIN)] =
-    std::make_pair (interface_definition_file, static_cast<GladeXML*> (NULL));
-  gtk_cb_data.finalizationHook = idle_finalize_ui_cb;
-  gtk_cb_data.initializationHook = idle_initialize_ui_cb;
-  gtk_cb_data.userData = &gtk_cb_data;
-  Common_UI_GladeDefinition ui_definition (argc_in,
-                                           argv_in);
-  COMMON_UI_GTK_MANAGER_SINGLETON::instance ()->initialize (argc_in,
-                                                            argv_in,
-                                                            &gtk_cb_data,
-                                                            &ui_definition);
+  ACE_OS::memset (gtk_cb_data.temperature, 0, sizeof (gfloat[OLIMEX_MOD_MPU6050_TEMPERATURE_BUFFER_SIZE * 2]));
+
+  Common_UI_GTK_State_t& state_r =
+    const_cast<Common_UI_GTK_State_t&> (COMMON_UI_GTK_MANAGER_SINGLETON::instance ()->getR ());
+  //CBData_in.UIState->gladeXML[ACE_TEXT_ALWAYS_CHAR (COMMON_UI_DEFINITION_DESCRIPTOR_MAIN)] =
+  //  std::make_pair (interface_definition_file, static_cast<GladeXML*> (NULL));
+  state_r.builders[ACE_TEXT_ALWAYS_CHAR (COMMON_UI_DEFINITION_DESCRIPTOR_MAIN)] =
+    std::make_pair (interface_definition_file, static_cast<GtkBuilder*> (NULL));
+  gtk_cb_data.UIState = &state_r;
+
+  Common_UI_GtkBuilderDefinition_t ui_definition;
+  ui_definition.initialize (state_r);
+  Common_UI_GTK_Configuration_t gtk_configuration;
+  gtk_configuration.argc = argc_in;
+  gtk_configuration.argv = argv_in;
+  gtk_configuration.CBData = &gtk_cb_data;
+  gtk_configuration.definition = &ui_definition;
+  gtk_configuration.eventHooks.initHook = idle_initialize_ui_cb;
+  gtk_configuration.eventHooks.finiHook = idle_finalize_ui_cb;
+  COMMON_UI_GTK_MANAGER_SINGLETON::instance ()->initialize (gtk_configuration);
 
   // step6: run program ?
   ACE_High_Res_Timer timer;
@@ -1186,11 +1109,10 @@ ACE_TMAIN (int argc_in,
 
   // debug info
   timer.stop ();
-  std::string working_time_string;
   ACE_Time_Value working_time;
   timer.elapsed_time (working_time);
-  Common_Tools::period2String (working_time,
-                               working_time_string);
+  std::string working_time_string =
+    Common_Timer_Tools::periodToString (working_time);
   ACE_DEBUG ((LM_DEBUG,
               ACE_TEXT ("total working time (h:m:s.us): \"%s\"...\n"),
               ACE_TEXT (working_time_string.c_str ())));
@@ -1206,10 +1128,10 @@ ACE_TMAIN (int argc_in,
     ACE_DEBUG ((LM_ERROR,
                ACE_TEXT ("failed to ACE_Profile_Timer::elapsed_time: \"%m\", aborting\n")));
 
-    Common_Tools::finalizeSignals (signal_set,
+    Common_Signal_Tools::finalize (use_reactor ? COMMON_SIGNAL_DISPATCH_REACTOR : COMMON_SIGNAL_DISPATCH_PROACTOR,
                                    previous_signal_actions,
                                    previous_signal_mask);
-    Common_Tools::finalizeLogging ();
+    Common_Log_Tools::finalize ();
     // *PORTABILITY*: on Windows, fini ACE...
 #if defined (ACE_WIN32) || defined (ACE_WIN64)
     result = ACE::fini ();
@@ -1225,13 +1147,10 @@ ACE_TMAIN (int argc_in,
   process_profile.elapsed_rusage (elapsed_rusage);
   ACE_Time_Value user_time (elapsed_rusage.ru_utime);
   ACE_Time_Value system_time (elapsed_rusage.ru_stime);
-  std::string user_time_string;
-  std::string system_time_string;
-  Common_Tools::period2String (user_time,
-                               user_time_string);
-  Common_Tools::period2String (system_time,
-                               system_time_string);
-  // debug info
+  std::string user_time_string = Common_Timer_Tools::periodToString (user_time);
+  std::string system_time_string =
+    Common_Timer_Tools::periodToString (system_time);
+
 #if defined (ACE_WIN32) || defined (ACE_WIN64)
   ACE_DEBUG ((LM_DEBUG,
               ACE_TEXT (" --> Process Profile <--\nreal time = %A seconds\nuser time = %A seconds\nsystem time = %A seconds\n --> Resource Usage <--\nuser time used: %s\nsystem time used: %s\n"),
@@ -1265,10 +1184,10 @@ ACE_TMAIN (int argc_in,
 #endif
 
   // step6: clean up
-  Common_Tools::finalizeSignals (signal_set,
+  Common_Signal_Tools::finalize (use_reactor ? COMMON_SIGNAL_DISPATCH_REACTOR : COMMON_SIGNAL_DISPATCH_PROACTOR,
                                  previous_signal_actions,
                                  previous_signal_mask);
-  Common_Tools::finalizeLogging ();
+  Common_Log_Tools::finalize ();
 
   // *PORTABILITY*: on Windows, must fini ACE...
 #if defined (ACE_WIN32) || defined (ACE_WIN64)

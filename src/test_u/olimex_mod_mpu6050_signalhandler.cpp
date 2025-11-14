@@ -25,7 +25,7 @@
 
 #include "common_tools.h"
 
-#include "common_ui_gtk_manager.h"
+#include "common_ui_gtk_manager_common.h"
 
 #include "olimex_mod_mpu6050_macros.h"
 
@@ -130,27 +130,29 @@ Olimex_Mod_MPU6050_SignalHandler::handleSignal (int signal_in)
     // - leave reactor event loop handling signals, sockets, (maintenance) timers...
     // --> (try to) terminate in a well-behaved manner
 
-    // step1: close open connection attempt(s)
-    if (inherited::configuration_->interfaceHandle)
+    // step1: close open connection attempt(s) ?
+    if (!inherited::configuration_->useReactor && inherited::configuration_->interfaceHandle)
     {
+      Olimex_Mod_MPU6050_IAsynchConnector_t* iasynch_connector_p =
+        static_cast<Olimex_Mod_MPU6050_IAsynchConnector_t*> (inherited::configuration_->interfaceHandle);
       try {
-        inherited::configuration_->interfaceHandle->abort ();
+        iasynch_connector_p->abort ();
       } catch (...) {
         ACE_DEBUG ((LM_ERROR,
-                    ACE_TEXT ("caught exception in Olimex_Mod_MPU6050_IConnector_t::abort(), aborting\n")));
-
+                    ACE_TEXT ("caught exception in Olimex_Mod_MPU6050_IAsynchConnector_t::abort(), aborting\n")));
         return false;
       }
     } // end IF
 
     // step2: stop GTK event dispatch ?
     if (!inherited::configuration_->consoleMode)
-      COMMON_UI_GTK_MANAGER_SINGLETON::instance ()->stop ();
+      COMMON_UI_GTK_MANAGER_SINGLETON::instance ()->stop (false,
+                                                          false);
 
-    // step3: stop reactor (&& proactor, if applicable)
-    Common_Tools::finalizeEventDispatch (true,                                   // stop reactor ?
-                                         !inherited::configuration_->useReactor, // stop proactor ?
-                                         -1);                                    // group ID (--> don't block !)
+    // step3: stop event dispatch
+    Common_Event_Tools::finalizeEventDispatch (*inherited::configuration_->dispatchState, // dispatch state
+                                               false,                                     // wait for completion ?
+                                               false);                                    // close singletons ?
   } // end IF
 
   return true;

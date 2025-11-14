@@ -20,7 +20,8 @@ AM_CPPFLAGS = \
 
 EXTRA_DIST = \
   Makefile.common \
-  Makefile.kernel
+  Makefile.kernel \
+  Kbuild
 EXTRA_PROGRAMS = \
   automake_dummy
 automake_dummy_SOURCES = \

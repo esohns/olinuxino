@@ -25,11 +25,15 @@ ccflags-y         = \
   -I$(KDIR)arch/$(ARCH)/include \
   -I$(KDIR)arch/$(ARCH)/uapi/include \
   -I$(KDIR)arch/sh/include \
-  -I$(KDIR)arch/$(ARCH)/plat-sunxi/include \
+  -I$(KDIR)include \
   -I$(AM_ABSSRCDIR)/3rd_party/i2cdevlib
 
 #ccflags-y        += \
 #  -mfloat-abi=softfp
+ifeq ($(ARCH),arm)
+ccflags-y      += \
+  -I$(KDIR)arch/$(ARCH)/plat-sunxi/include
+
 ifeq ($(DEBUG),1)
   ccflags-y      += \
     -mfpu=neon \
@@ -44,6 +48,15 @@ else
     -ftree-vectorize \
     -fassociative-math \
     -funsafe-math-optimizations
+endif
+else
+ccflags-y      += \
+  -I$(KDIR)arch/$(ARCH)/include
+
+ifeq ($(DEBUG),1)
+  ccflags-y      += \
+    -DDEBUG
+endif
 endif
 
 #KBUILD_EXTRA_SYMBOLS

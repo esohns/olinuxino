@@ -25,12 +25,16 @@
 
 #include "olimex_mod_mpu6050_macros.h"
 
-Olimex_Mod_MPU6050_SessionMessage::Olimex_Mod_MPU6050_SessionMessage (Stream_SessionMessageType messageType_in,
+Olimex_Mod_MPU6050_SessionMessage::Olimex_Mod_MPU6050_SessionMessage (Stream_SessionId_t sessionId_in,
+                                                                      enum Stream_SessionMessageType messageType_in,
                                                                       Olimex_Mod_MPU6050_StreamSessionData_t*& sessionData_inout,
-                                                                      Olimex_Mod_MPU6050_UserData* userData_in)
- : inherited (messageType_in,
+                                                                      struct Olimex_Mod_MPU6050_UserData* userData_in,
+                                                                      bool expedited_in)
+ : inherited (sessionId_in,
+              messageType_in,
               sessionData_inout,
-              userData_in)
+              userData_in,
+              expedited_in)
 {
   OLIMEX_MOD_MPU6050_TRACE (ACE_TEXT ("Olimex_Mod_MPU6050_SessionMessage::Olimex_Mod_MPU6050_SessionMessage"));
 
@@ -43,25 +47,23 @@ Olimex_Mod_MPU6050_SessionMessage::Olimex_Mod_MPU6050_SessionMessage (const Olim
 
 }
 
-Olimex_Mod_MPU6050_SessionMessage::Olimex_Mod_MPU6050_SessionMessage (ACE_Allocator* messageAllocator_in)
- : inherited (messageAllocator_in)
-{
-  OLIMEX_MOD_MPU6050_TRACE (ACE_TEXT ("Olimex_Mod_MPU6050_SessionMessage::Olimex_Mod_MPU6050_SessionMessage"));
-
-}
-
-Olimex_Mod_MPU6050_SessionMessage::Olimex_Mod_MPU6050_SessionMessage (ACE_Data_Block* dataBlock_in,
+Olimex_Mod_MPU6050_SessionMessage::Olimex_Mod_MPU6050_SessionMessage (Stream_SessionId_t sessionId_in,
                                                                       ACE_Allocator* messageAllocator_in)
- : inherited (dataBlock_in,
+ : inherited (sessionId_in,
               messageAllocator_in)
 {
   OLIMEX_MOD_MPU6050_TRACE (ACE_TEXT ("Olimex_Mod_MPU6050_SessionMessage::Olimex_Mod_MPU6050_SessionMessage"));
 
 }
 
-Olimex_Mod_MPU6050_SessionMessage::~Olimex_Mod_MPU6050_SessionMessage ()
+Olimex_Mod_MPU6050_SessionMessage::Olimex_Mod_MPU6050_SessionMessage (Stream_SessionId_t sessionId_in,
+                                                                      ACE_Data_Block* dataBlock_in,
+                                                                      ACE_Allocator* messageAllocator_in)
+ : inherited (sessionId_in,
+              dataBlock_in,
+              messageAllocator_in)
 {
-  OLIMEX_MOD_MPU6050_TRACE (ACE_TEXT ("Olimex_Mod_MPU6050_SessionMessage::~Olimex_Mod_MPU6050_SessionMessage"));
+  OLIMEX_MOD_MPU6050_TRACE (ACE_TEXT ("Olimex_Mod_MPU6050_SessionMessage::Olimex_Mod_MPU6050_SessionMessage"));
 
 }
 

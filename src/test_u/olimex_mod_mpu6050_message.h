@@ -39,14 +39,13 @@ class ACE_Message_Block;
 class Olimex_Mod_MPU6050_SessionMessage;
 
 class Olimex_Mod_MPU6050_Message
- : public Stream_MessageBase_T<Stream_AllocatorConfiguration,
-                               Stream_ControlMessageType,
-                               Stream_SessionMessageType,
-                               Olimex_Mod_MPU6050_MessageType>
- //: public Stream_DataMessageBase_T<Olimex_Mod_MPU6050_MessageType>
+ : public Stream_MessageBase_T<Stream_DataBase_T<enum Olimex_Mod_MPU6050_MessageType>,
+                               enum Stream_MessageType,
+                               enum Olimex_Mod_MPU6050_MessageType>
 {
   // enable access to specific private ctors...
-  friend class Stream_MessageAllocatorHeapBase_T<Stream_AllocatorConfiguration,
+  friend class Stream_MessageAllocatorHeapBase_T<ACE_MT_SYNCH,
+                                                 struct Stream_AllocatorConfiguration,
                                                  Olimex_Mod_MPU6050_ControlMessage_t,
                                                  Olimex_Mod_MPU6050_Message,
                                                  Olimex_Mod_MPU6050_SessionMessage>;
@@ -54,8 +53,8 @@ class Olimex_Mod_MPU6050_Message
  public:
   virtual ~Olimex_Mod_MPU6050_Message ();
 
-  virtual Olimex_Mod_MPU6050_MessageType command () const; // return value: message type
-  static std::string CommandType2String (Olimex_Mod_MPU6050_MessageType);
+  virtual enum Olimex_Mod_MPU6050_MessageType command () const; // return value: message type
+  static std::string CommandTypeToString (enum Olimex_Mod_MPU6050_MessageType);
 
   // overrides from ACE_Message_Block
   // --> create a "shallow" copy that references the same datablock
@@ -68,16 +67,16 @@ class Olimex_Mod_MPU6050_Message
   Olimex_Mod_MPU6050_Message (const Olimex_Mod_MPU6050_Message&);
 
  private:
-  typedef Stream_MessageBase_T<Stream_AllocatorConfiguration,
-                               Stream_ControlMessageType,
-                               Stream_SessionMessageType,
-                               Olimex_Mod_MPU6050_MessageType> inherited;
-  //typedef Stream_MessageBase_T<Olimex_Mod_MPU6050_MessageType> inherited;
+  typedef Stream_MessageBase_T<Stream_DataBase_T<enum Olimex_Mod_MPU6050_MessageType>,
+                               enum Stream_MessageType,
+                               enum Olimex_Mod_MPU6050_MessageType> inherited;
 
   ACE_UNIMPLEMENTED_FUNC (Olimex_Mod_MPU6050_Message ())
   // *NOTE*: to be used by allocators...
-  Olimex_Mod_MPU6050_Message (ACE_Data_Block*, // data block to use
-                              ACE_Allocator*); // message allocator
+  Olimex_Mod_MPU6050_Message (Stream_SessionId_t, // session id
+                              ACE_Data_Block*,    // data block to use
+                              ACE_Allocator*,     // message allocator
+                              bool = true);       // increment running message counter ?
   ACE_UNIMPLEMENTED_FUNC (Olimex_Mod_MPU6050_Message& operator= (const Olimex_Mod_MPU6050_Message&))
 };
 

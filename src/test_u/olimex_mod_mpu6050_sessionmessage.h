@@ -37,41 +37,40 @@ class ACE_Data_Block;
 class ACE_Message_Block;
 
 class Olimex_Mod_MPU6050_SessionMessage
- : public Stream_SessionMessageBase_T<Stream_AllocatorConfiguration,
-                                      Stream_SessionMessageType,
+ : public Stream_SessionMessageBase_T<enum Stream_SessionMessageType,
                                       Olimex_Mod_MPU6050_StreamSessionData_t,
-                                      Olimex_Mod_MPU6050_UserData,
-                                      Stream_ControlMessageType,
-                                      Olimex_Mod_MPU6050_Message>
+                                      struct Olimex_Mod_MPU6050_UserData>
 {
   // enable access to private ctor(s)...
-  friend class Stream_MessageAllocatorHeapBase_T<Stream_AllocatorConfiguration,
+  friend class Stream_MessageAllocatorHeapBase_T<ACE_MT_SYNCH,
+                                                 struct Stream_AllocatorConfiguration,
                                                  Olimex_Mod_MPU6050_ControlMessage_t,
                                                  Olimex_Mod_MPU6050_Message,
                                                  Olimex_Mod_MPU6050_SessionMessage>;
 
  public:
   // *NOTE*: assume lifetime responsibility for the second argument !
-  Olimex_Mod_MPU6050_SessionMessage (Stream_SessionMessageType,                // session message type
+  Olimex_Mod_MPU6050_SessionMessage (Stream_SessionId_t,                       // session id
+                                     enum Stream_SessionMessageType,           // session message type
                                      Olimex_Mod_MPU6050_StreamSessionData_t*&, // session data handle
-                                     Olimex_Mod_MPU6050_UserData*);            // user data handle
+                                     struct Olimex_Mod_MPU6050_UserData*,      // user data handle
+                                     bool = false);                            // expedited ?
   // *NOTE*: to be used by message allocators...
-  Olimex_Mod_MPU6050_SessionMessage (ACE_Allocator*); // message allocator
-  Olimex_Mod_MPU6050_SessionMessage (ACE_Data_Block*, // data block
-                                     ACE_Allocator*); // message allocator
-  virtual ~Olimex_Mod_MPU6050_SessionMessage ();
+  Olimex_Mod_MPU6050_SessionMessage (Stream_SessionId_t, // session id
+                                     ACE_Allocator*);    // message allocator
+  Olimex_Mod_MPU6050_SessionMessage (Stream_SessionId_t, // session id
+                                     ACE_Data_Block*,    // data block
+                                     ACE_Allocator*);    // message allocator
+  inline virtual ~Olimex_Mod_MPU6050_SessionMessage () {}
 
   // override from ACE_Message_Block
   // *WARNING*: any children need to override this as well
   virtual ACE_Message_Block* duplicate (void) const;
 
  private:
-  typedef Stream_SessionMessageBase_T<Stream_AllocatorConfiguration,
-                                      Stream_SessionMessageType,
+  typedef Stream_SessionMessageBase_T<enum Stream_SessionMessageType,
                                       Olimex_Mod_MPU6050_StreamSessionData_t,
-                                      Olimex_Mod_MPU6050_UserData,
-                                      Stream_ControlMessageType,
-                                      Olimex_Mod_MPU6050_Message> inherited;
+                                      struct Olimex_Mod_MPU6050_UserData> inherited;
 
   ACE_UNIMPLEMENTED_FUNC (Olimex_Mod_MPU6050_SessionMessage ())
   // copy ctor (to be used by duplicate())

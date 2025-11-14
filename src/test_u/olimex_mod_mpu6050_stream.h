@@ -38,34 +38,47 @@
 template <typename SourceModuleType>
 class Olimex_Mod_MPU6050_Stream_T
  : public Stream_Base_T<ACE_MT_SYNCH,
-                        ACE_MT_SYNCH,
                         Common_TimePolicy_t,
-                        Stream_ControlType,
-                        Stream_SessionMessageType,
-                        Stream_StateMachine_ControlState,
-                        Olimex_Mod_MPU6050_StreamState,
-                        Olimex_Mod_MPU6050_StreamConfiguration,
+                        stream_name_string_,
+                        enum Stream_ControlType,
+                        enum Stream_SessionMessageType,
+                        enum Stream_StateMachine_ControlState,
+                        struct Olimex_Mod_MPU6050_StreamState,
+                        struct Olimex_Mod_MPU6050_StreamConfiguration,
                         Olimex_Mod_MPU6050_RuntimeStatistic_t,
-                        Stream_ModuleConfiguration,
-                        Olimex_Mod_MPU6050_ModuleHandlerConfiguration,
-                        Olimex_Mod_MPU6050_SessionData,
-                        Olimex_Mod_MPU6050_StreamSessionData_t,
+                        struct Olimex_Mod_MPU6050_ModuleHandlerConfiguration,
+                        Olimex_Mod_MPU6050_SessionManager_t,
                         Olimex_Mod_MPU6050_ControlMessage_t,
                         Olimex_Mod_MPU6050_Message,
-                        Olimex_Mod_MPU6050_SessionMessage>
+                        Olimex_Mod_MPU6050_SessionMessage,
+                        struct Olimex_Mod_MPU6050_UserData>
 {
+  typedef Stream_Base_T<ACE_MT_SYNCH,
+                        Common_TimePolicy_t,
+                        stream_name_string_,
+                        enum Stream_ControlType,
+                        enum Stream_SessionMessageType,
+                        enum Stream_StateMachine_ControlState,
+                        struct Olimex_Mod_MPU6050_StreamState,
+                        struct Olimex_Mod_MPU6050_StreamConfiguration,
+                        Olimex_Mod_MPU6050_RuntimeStatistic_t,
+                        struct Olimex_Mod_MPU6050_ModuleHandlerConfiguration,
+                        Olimex_Mod_MPU6050_SessionManager_t,
+                        Olimex_Mod_MPU6050_ControlMessage_t,
+                        Olimex_Mod_MPU6050_Message,
+                        Olimex_Mod_MPU6050_SessionMessage,
+                        struct Olimex_Mod_MPU6050_UserData> inherited;
+
  public:
   Olimex_Mod_MPU6050_Stream_T ();
   virtual ~Olimex_Mod_MPU6050_Stream_T ();
 
   // implement (part of) Stream_IStreamControlBase
-  virtual bool load (Stream_ModuleList_t&, // return value: module list
-                     bool&);               // return value: delete modules ?
+  virtual bool load (Stream_ILayout*, // return value: module list
+                     bool&);          // return value: delete modules ?
 
   // implement Common_IInitialize_T
-  virtual bool initialize (const Olimex_Mod_MPU6050_StreamConfiguration&, // configuration
-                           bool = true,                                   // setup pipeline ?
-                           bool = true);                                  // reset session data ?
+  virtual bool initialize (const typename inherited::CONFIGURATION_T&); // configuration
 
   // implement Common_IStatistic_T
   // *NOTE*: these delegate to runtimeStatistic_
@@ -73,23 +86,6 @@ class Olimex_Mod_MPU6050_Stream_T
   virtual void report () const;
 
  private:
-  typedef Stream_Base_T<ACE_MT_SYNCH,
-                        ACE_MT_SYNCH,
-                        Common_TimePolicy_t,
-                        Stream_ControlType,
-                        Stream_SessionMessageType,
-                        Stream_StateMachine_ControlState,
-                        Olimex_Mod_MPU6050_StreamState,
-                        Olimex_Mod_MPU6050_StreamConfiguration,
-                        Olimex_Mod_MPU6050_RuntimeStatistic_t,
-                        Stream_ModuleConfiguration,
-                        Olimex_Mod_MPU6050_ModuleHandlerConfiguration,
-                        Olimex_Mod_MPU6050_SessionData,
-                        Olimex_Mod_MPU6050_StreamSessionData_t,
-                        Olimex_Mod_MPU6050_ControlMessage_t,
-                        Olimex_Mod_MPU6050_Message,
-                        Olimex_Mod_MPU6050_SessionMessage> inherited;
-
   ACE_UNIMPLEMENTED_FUNC (Olimex_Mod_MPU6050_Stream_T (const Olimex_Mod_MPU6050_Stream_T&))
   ACE_UNIMPLEMENTED_FUNC (Olimex_Mod_MPU6050_Stream_T& operator= (const Olimex_Mod_MPU6050_Stream_T&))
 

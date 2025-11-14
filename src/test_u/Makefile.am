@@ -8,7 +8,7 @@ ACLOCAL_AMFLAGS = \
 #          -fno-implicit-templates
 AM_CPPFLAGS = \
   -I/usr/share/gettext \
-  -I$(top_srcdir)/../ATCD/ACE \
+  -I$(top_srcdir)/module/ACE \
   $(PKGSDL_CFLAGS) \
   $(PKGGTK_CFLAGS)
 if VALGRIND_SUPPORT
@@ -17,16 +17,10 @@ AM_CPPFLAGS += \
 endif
 
 DEFS = \
-  -DHAVE_CONFIG_H \
-  -DBASEDIR=\"$(datadir)/@PACKAGE_NAME@\" \
-  -DCOMMON_HAS_DLL \
-  -DCOMMON_UI_HAS_DLL \
-  -DSTREAM_HAS_DLL \
-  -DNET_HAS_DLL \
-  -DNET_CLIENT_HAS_DLL
+  -DHAVE_CONFIG_H
 if DEBUG
 DEFS += \
-  -DDEBUG_DEBUGGER
+  -D_DEBUG
 endif
 
 bin_PROGRAMS = \
@@ -46,8 +40,6 @@ olimex_mod_mpu6050_SOURCES = \
   olimex_mod_mpu6050_macros.h \
   olimex_mod_mpu6050_message.cpp \
   olimex_mod_mpu6050_message.h \
-  olimex_mod_mpu6050_module_eventhandler.cpp \
-  olimex_mod_mpu6050_module_eventhandler.h \
   olimex_mod_mpu6050_modules_common.h \
   olimex_mod_mpu6050_network.h \
   olimex_mod_mpu6050_opengl.cpp \
@@ -65,24 +57,24 @@ olimex_mod_mpu6050_SOURCES = \
 
 olimex_mod_mpu6050_CPPFLAGS = \
   $(AM_CPPFLAGS) \
-  -I$(top_srcdir)/modules/libCommon/src \
-  -I$(top_srcdir)/modules/libCommon/src/ui \
-  -I$(top_srcdir)/modules/libACEStream/src \
-  -I$(top_srcdir)/modules/libACEStream/src/modules/misc \
-  -I$(top_srcdir)/modules/libACEStream/src/modules/net \
-  -I$(top_srcdir)/modules/libACENetwork/src \
-  -I$(top_srcdir)/modules/libACENetwork/src/client_server \
+  -I$(top_srcdir)/modules/Common/src \
+  -I$(top_srcdir)/modules/Common/src/ui \
+  -I$(top_srcdir)/modules/ACEStream/src \
+  -I$(top_srcdir)/modules/ACEStream/src/modules/misc \
+  -I$(top_srcdir)/modules/ACEStream/src/modules/net \
+  -I$(top_srcdir)/modules/ACENetwork/src \
+  -I$(top_srcdir)/modules/ACENetwork/src/client_server \
   -I$(top_srcdir)/src/include
 olimex_mod_mpu6050_LDFLAGS = \
-  -L$(top_srcdir)/modules/ATCD/ACE/build/linux/lib \
+  -L$(top_srcdir)/modules/ACE/ace \
   $(PKGGTK_LDFLAGS) \
-  -L$(abs_builddir)/../../modules/libCommon/src/.libs \
-  -L$(abs_builddir)/../../modules/libCommon/src/ui/.libs \
-  -L$(abs_builddir)/../../modules/libACEStream/src/.libs \
-  -L$(abs_builddir)/../../modules/libACEStream/src/modules/misc/.libs \
-  -L$(abs_builddir)/../../modules/libACEStream/src/modules/net/.libs \
-  -L$(abs_builddir)/../../modules/libACENetwork/src/.libs \
-  -L$(abs_builddir)/../../modules/libACENetwork/src/client_server/.libs
+  -L$(abs_builddir)/../../modules/Common/src/.libs \
+  -L$(abs_builddir)/../../modules/Common/src/ui/.libs \
+  -L$(abs_builddir)/../../modules/ACEStream/src/.libs \
+  -L$(abs_builddir)/../../modules/ACEStream/src/modules/misc/.libs \
+  -L$(abs_builddir)/../../modules/ACEStream/src/modules/net/.libs \
+  -L$(abs_builddir)/../../modules/ACENetwork/src/.libs \
+  -L$(abs_builddir)/../../modules/ACENetwork/src/client_server/.libs
 olimex_mod_mpu6050_LDADD = \
   -lACE \
   $(PKGGTK_LIBS) \

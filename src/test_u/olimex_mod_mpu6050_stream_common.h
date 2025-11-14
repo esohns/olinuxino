@@ -23,6 +23,8 @@
 #include "stream_common.h"
 #include "stream_messageallocatorheap_base.h"
 
+#include "stream_net_common.h"
+
 #include "olimex_mod_mpu6050_types.h"
 
 // forward declarations
@@ -39,35 +41,40 @@ struct Olimex_Mod_MPU6050_SessionData;
 struct Olimex_Mod_MPU6050_StreamState
  : Stream_State
 {
-  inline Olimex_Mod_MPU6050_StreamState ()
+  Olimex_Mod_MPU6050_StreamState ()
    : currentSessionData (NULL)
    , userData (NULL)
-  {};
+  {}
 
-  Olimex_Mod_MPU6050_SessionData* currentSessionData;
-  Olimex_Mod_MPU6050_UserData*    userData;
+  struct Olimex_Mod_MPU6050_SessionData* currentSessionData;
+  struct Olimex_Mod_MPU6050_UserData*    userData;
 };
 
 struct Olimex_Mod_MPU6050_ConnectionState;
 typedef Stream_Statistic Olimex_Mod_MPU6050_RuntimeStatistic_t;
+typedef Net_IConnection_T<ACE_INET_Addr,
+                          struct Olimex_Mod_MPU6050_ConnectionState,
+                          Net_StreamStatistic_t> Olimex_Mod_MPU6050_IConnection_t;
 struct Olimex_Mod_MPU6050_SessionData
  : Stream_SessionData
 {
-  inline Olimex_Mod_MPU6050_SessionData ()
+  Olimex_Mod_MPU6050_SessionData ()
    : Stream_SessionData ()
-   , connectionState (NULL)
+   , connection (NULL)
+   , connectionStates ()
    , currentStatistic ()
    , state (NULL)
    , userData (NULL)
-  {};
+  {}
 
-  Olimex_Mod_MPU6050_ConnectionState*   connectionState;
-  Olimex_Mod_MPU6050_RuntimeStatistic_t currentStatistic;
+  Olimex_Mod_MPU6050_IConnection_t*            connection; // UDP source/IO module
+  Stream_Net_ConnectionStates_t                connectionStates;
+  Olimex_Mod_MPU6050_RuntimeStatistic_t        currentStatistic;
 
-  Olimex_Mod_MPU6050_StreamState*       state;
+  struct Olimex_Mod_MPU6050_StreamState*       state;
 
-  Olimex_Mod_MPU6050_UserData*          userData;
+  struct Olimex_Mod_MPU6050_UserData*          userData;
 };
-typedef Stream_SessionData_T<Olimex_Mod_MPU6050_SessionData> Olimex_Mod_MPU6050_StreamSessionData_t;
+typedef Stream_SessionData_T<struct Olimex_Mod_MPU6050_SessionData> Olimex_Mod_MPU6050_StreamSessionData_t;
 
 #endif // #ifndef OLIMEX_MOD_MPU6050_STREAM_COMMON_H

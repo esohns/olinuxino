@@ -29,22 +29,16 @@
 #include "olimex_mod_mpu6050_common.h"
 #include "olimex_mod_mpu6050_macros.h"
 
-Olimex_Mod_MPU6050_EventHandler::Olimex_Mod_MPU6050_EventHandler (Olimex_Mod_MPU6050_GtkCBData* GtkCBData_in,
+Olimex_Mod_MPU6050_EventHandler::Olimex_Mod_MPU6050_EventHandler (struct Olimex_Mod_MPU6050_GTK_CBData* CBData_in,
                                                                   bool consoleMode_in)
  : consoleMode_ (consoleMode_in)
- , GtkCBData_ (GtkCBData_in)
+ , CBData_ (CBData_in)
  , sessionData_ (NULL)
 {
   OLIMEX_MOD_MPU6050_TRACE (ACE_TEXT ("Olimex_Mod_MPU6050_EventHandler::Olimex_Mod_MPU6050_EventHandler"));
 
   // sanity check(s)
-  ACE_ASSERT (GtkCBData_);
-}
-
-Olimex_Mod_MPU6050_EventHandler::~Olimex_Mod_MPU6050_EventHandler ()
-{
-  OLIMEX_MOD_MPU6050_TRACE (ACE_TEXT ("Olimex_Mod_MPU6050_EventHandler::~Olimex_Mod_MPU6050_EventHandler"));
-
+  ACE_ASSERT (CBData_);
 }
 
 void
@@ -55,16 +49,16 @@ Olimex_Mod_MPU6050_EventHandler::start (Stream_SessionId_t sessionID_in,
 
   sessionData_ = &const_cast<Olimex_Mod_MPU6050_SessionData&> (sessionData_in);
 
-  {
-    ACE_Guard<ACE_SYNCH_MUTEX> aGuard (GtkCBData_->lock);
-
-    GtkCBData_->eventQueue.push_back (OLIMEX_MOD_MPU6050_EVENT_CONNECT);
+  ACE_ASSERT (CBData_->UIState);
+  { ACE_Guard<ACE_SYNCH_MUTEX> aGuard (CBData_->UIState->lock);
+    CBData_->eventQueue.push_back (OLIMEX_MOD_MPU6050_EVENT_CONNECT);
   } // end lock scope
 }
 
 void
 Olimex_Mod_MPU6050_EventHandler::notify (Stream_SessionId_t sessionID_in,
-                                         const Stream_SessionMessageType& sessionMessage_in)
+                                         const Stream_SessionMessageType& sessionMessage_in,
+                                         bool expedite_in)
 {
   OLIMEX_MOD_MPU6050_TRACE (ACE_TEXT ("Olimex_Mod_MPU6050_EventHandler::notify"));
 
@@ -108,11 +102,10 @@ Olimex_Mod_MPU6050_EventHandler::notify (Stream_SessionId_t sessionID_in,
       return;
     } // end IF
 
-    {
-      ACE_Guard<ACE_SYNCH_MUTEX> aGuard (GtkCBData_->lock);
-
-      GtkCBData_->eventQueue.push_back (OLIMEX_MOD_MPU6050_EVENT_MESSAGE);
-      GtkCBData_->messageQueue.push_front (message_p);
+    ACE_ASSERT (CBData_->UIState);
+    { ACE_Guard<ACE_SYNCH_MUTEX> aGuard (CBData_->UIState->lock);
+      CBData_->eventQueue.push_back (OLIMEX_MOD_MPU6050_EVENT_MESSAGE);
+      CBData_->messageQueue.push_front (message_p);
     } // end lock scope
   } // end ELSE
 }
@@ -123,10 +116,9 @@ Olimex_Mod_MPU6050_EventHandler::notify (Stream_SessionId_t sessionID_in,
 {
   OLIMEX_MOD_MPU6050_TRACE (ACE_TEXT ("Olimex_Mod_MPU6050_EventHandler::notify"));
 
-  {
-    ACE_Guard<ACE_SYNCH_MUTEX> aGuard (GtkCBData_->lock);
-
-    GtkCBData_->eventQueue.push_back (OLIMEX_MOD_MPU6050_EVENT_SESSION_MESSAGE);
+  ACE_ASSERT (CBData_->UIState);
+  { ACE_Guard<ACE_SYNCH_MUTEX> aGuard (CBData_->UIState->lock);
+    CBData_->eventQueue.push_back (OLIMEX_MOD_MPU6050_EVENT_SESSION_MESSAGE);
   } // end lock scope
 }
 
@@ -135,9 +127,8 @@ Olimex_Mod_MPU6050_EventHandler::end (Stream_SessionId_t sessionID_in)
 {
   OLIMEX_MOD_MPU6050_TRACE (ACE_TEXT ("Olimex_Mod_MPU6050_EventHandler::end"));
 
-  {
-    ACE_Guard<ACE_SYNCH_MUTEX> aGuard (GtkCBData_->lock);
-
-    GtkCBData_->eventQueue.push_back (OLIMEX_MOD_MPU6050_EVENT_DISCONNECT);
+  ACE_ASSERT (CBData_->UIState);
+  { ACE_Guard<ACE_SYNCH_MUTEX> aGuard (CBData_->UIState->lock);
+    CBData_->eventQueue.push_back (OLIMEX_MOD_MPU6050_EVENT_DISCONNECT);
   } // end lock scope
 }

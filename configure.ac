@@ -23,12 +23,8 @@ m4_ifset([M4_OLINUXINO_VERSION_DEVEL],
          [AC_DEFINE(HAVE_VERSION_DEVEL, [1], [Define if a version suffix is present.])])
 AC_SUBST([OLINUXINO_VERSION_API],[M4_OLINUXINO_VERSION_API])
 
-AC_PREREQ([2.69])
-AC_INIT([olinuxino],
-        [M4_OLINUXINO_VERSION],
-        [eriksohns@123mail.org],
-        [olinuxino],
-        [http://www.github.com/esohns/olinuxino])
+AC_PREREQ([2.72])
+AC_INIT([olinuxino],[M4_OLINUXINO_VERSION],[eriksohns@123mail.org],[olinuxino],[http://www.github.com/esohns/olinuxino])
 AC_CONFIG_SRCDIR([src/ko/olimex_mod_mpu6050_main.c])
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_AUX_DIR([aux_config])
@@ -159,13 +155,13 @@ fi
 
 # export variables (so Makefile substitutions can be made)
 #CXXFLAGS_BASE="-ansi -D_POSIX_C_SOURCE=199506L -D_REENTRANT -D_GNU_SOURCE"
-CXXFLAGS_BASE="-ansi -std=c++11 -Wall -D_GNU_SOURCE"
+CXXFLAGS_BASE="-ansi -std=c++17 -Wall -D_GNU_SOURCE"
 CXXFLAGS="${CXXFLAGS_BASE} ${CXXFLAGS_DEBUG} ${CXXFLAGS_TRACING} ${CXXFLAGS_VALGRIND}"
 AC_SUBST(CXXFLAGS)
 
 # build modules ?
 AC_MSG_CHECKING([enable module support])
-module_support_default="yes"
+module_support_default="no"
 AC_ARG_ENABLE([module-support],
               [AS_HELP_STRING([--enable-module_support], [compile submodules [default="$module_support_default"]])],
               [case "${enableval}" in
@@ -181,13 +177,13 @@ else
   AC_MSG_RESULT([no])
 fi
 AM_COND_IF([BUILD_MODULES],
-           [AC_CONFIG_SUBDIRS([modules/libCommon
-                               modules/libACEStream
-                               modules/libACENetwork])])
-dnl AC_CONFIG_SUBDIRS([modules/ATCD
-dnl                    modules/libCommon
-dnl                    modules/libACEStream
-dnl                    modules/libACENetwork])])
+           [AC_CONFIG_SUBDIRS([modules/Common
+                               modules/ACEStream
+                               modules/ACENetwork])])
+dnl AC_CONFIG_SUBDIRS([modules/ACE
+dnl                    modules/Common
+dnl                    modules/ACEStream
+dnl                    modules/ACENetwork])])
 AM_COND_IF([BUILD_MODULES],
            [AC_CONFIG_FILES([modules/Makefile])])
 
@@ -221,7 +217,8 @@ AC_FUNC_ERROR_AT_LINE
 # checks for libraries
 AM_COND_IF([VALGRIND_SUPPORT],
            [PKG_CHECK_MODULES([PKGVALGRIND], [valgrind])])
-PKG_CHECK_MODULES([PKGGTK], [libpng gmodule-export-2.0 gthread-2.0 gtk+-2.0 gtkglext-1.0 libglade-2.0])
+#PKG_CHECK_MODULES([PKGGTK], [libpng gmodule-export-2.0 gthread-2.0 gtk+-2.0 gtkglext-1.0 libglade-2.0])
+PKG_CHECK_MODULES([PKGGTK], [libpng gtk+-3.0])
 PKG_CHECK_MODULES([PKGGL], [gl glu])
 
 # checks for other libraries (non-pkg-config)

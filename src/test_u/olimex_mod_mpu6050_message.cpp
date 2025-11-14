@@ -35,10 +35,14 @@ Olimex_Mod_MPU6050_Message::Olimex_Mod_MPU6050_Message (const Olimex_Mod_MPU6050
 
 }
 
-Olimex_Mod_MPU6050_Message::Olimex_Mod_MPU6050_Message (ACE_Data_Block* dataBlock_in,
-                                                        ACE_Allocator* messageAllocator_in)
- : inherited (dataBlock_in,        // use (don't own !) this data block
-              messageAllocator_in) // use this when destruction is imminent...
+Olimex_Mod_MPU6050_Message::Olimex_Mod_MPU6050_Message (Stream_SessionId_t sessionId_in,
+                                                        ACE_Data_Block* dataBlock_in,
+                                                        ACE_Allocator* messageAllocator_in,
+                                                        bool incrementCounter_in)
+ : inherited (sessionId_in,
+              dataBlock_in,        // use (don't own !) this data block
+              messageAllocator_in, // use this when destruction is imminent...
+              incrementCounter_in)
 {
   OLIMEX_MOD_MPU6050_TRACE (ACE_TEXT ("Olimex_Mod_MPU6050_Message::Olimex_Mod_MPU6050_Message"));
 
@@ -60,9 +64,9 @@ Olimex_Mod_MPU6050_Message::command () const
 }
 
 std::string
-Olimex_Mod_MPU6050_Message::CommandType2String (Olimex_Mod_MPU6050_MessageType messageType_in)
+Olimex_Mod_MPU6050_Message::CommandTypeToString (enum Olimex_Mod_MPU6050_MessageType messageType_in)
 {
-  OLIMEX_MOD_MPU6050_TRACE (ACE_TEXT ("Olimex_Mod_MPU6050_Message::CommandType2String"));
+  OLIMEX_MOD_MPU6050_TRACE (ACE_TEXT ("Olimex_Mod_MPU6050_Message::CommandTypeToString"));
 
   std::string result = ACE_TEXT ("INVALID");
 

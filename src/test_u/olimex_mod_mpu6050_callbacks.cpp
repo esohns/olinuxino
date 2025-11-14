@@ -22,22 +22,22 @@
 #include "olimex_mod_mpu6050_callbacks.h"
 
 #include <cmath>
-
 #if defined (ACE_WIN32) || defined (ACE_WIN64)
 #include "math.h"
-#endif
+#endif // ACE_WIN32 || ACE_WIN64
 
-#include <ace/Log_Msg.h>
+#include "ace/Log_Msg.h"
 
-#include <GL/gl.h>
-#include <GL/glu.h>
-#include <GL/glut.h>
-#include <glm/glm.hpp>
+#include "GL/gl.h"
+#include "GL/glu.h"
+#include "GL/glut.h"
+#include "glm/glm.hpp"
 
-#include <gmodule.h>
+#include "gmodule.h"
 
-#include <gdk/gdkkeysyms.h>
-#include <gtk/gtkgl.h>
+#include "gdk/gdkkeysyms.h"
+
+// #include "gtk/gtkgl.h"
 
 #include "common_timer_manager.h"
 
@@ -58,19 +58,17 @@ idle_initialize_ui_cb (gpointer userData_in)
 {
   OLIMEX_MOD_MPU6050_TRACE (ACE_TEXT ("::idle_initialize_ui_cb"));
 
-  Olimex_Mod_MPU6050_GtkCBData* cb_data_p =
-    static_cast<Olimex_Mod_MPU6050_GtkCBData*> (userData_in);
-
   // sanity check(s)
+  struct Olimex_Mod_MPU6050_GTK_CBData* cb_data_p =
+    static_cast<struct Olimex_Mod_MPU6050_GTK_CBData*> (userData_in);
   ACE_ASSERT (cb_data_p);
-
-  Common_UI_GladeXMLsIterator_t iterator =
-    cb_data_p->gladeXML.find (ACE_TEXT_ALWAYS_CHAR (COMMON_UI_GTK_DEFINITION_DESCRIPTOR_MAIN));
-  // sanity check(s)
-  ACE_ASSERT (iterator != cb_data_p->gladeXML.end ());
+  ACE_ASSERT (cb_data_p->UIState);
+  Common_UI_GTK_BuildersIterator_t iterator =
+    cb_data_p->UIState->builders.find (ACE_TEXT_ALWAYS_CHAR (COMMON_UI_DEFINITION_DESCRIPTOR_MAIN));
+  ACE_ASSERT (iterator != cb_data_p->UIState->builders.end ());
 
   GtkWindow* main_window_p =
-    GTK_WINDOW (glade_xml_get_widget ((*iterator).second.second,
+    GTK_WINDOW (gtk_builder_get_object ((*iterator).second.second,
                                       ACE_TEXT_ALWAYS_CHAR (OLIMEX_MOD_MPU6050_UI_WIDGET_NAME_WINDOW_MAIN)));
   ACE_ASSERT (main_window_p);
   gtk_window_set_default_size (main_window_p,
@@ -78,42 +76,42 @@ idle_initialize_ui_cb (gpointer userData_in)
                                OLIMEX_MOD_MPU6050_DEFAULT_UI_WIDGET_WINDOW_MAIN_SIZE_HEIGHT);
 
   GtkDialog* about_dialog_p =
-    GTK_DIALOG (glade_xml_get_widget ((*iterator).second.second,
+    GTK_DIALOG (gtk_builder_get_object ((*iterator).second.second,
                                         ACE_TEXT_ALWAYS_CHAR (OLIMEX_MOD_MPU6050_UI_WIDGET_NAME_DIALOG_ABOUT)));
   ACE_ASSERT (about_dialog_p);
 
   //if (cb_data_p->clientMode)
   //{
   //  GtkImageMenuItem* menu_item_p =
-  //    GTK_IMAGE_MENU_ITEM (glade_xml_get_widget ((*iterator).second.second,
+  //    GTK_IMAGE_MENU_ITEM (gtk_builder_get_object ((*iterator).second.second,
   //                                               ACE_TEXT_ALWAYS_CHAR (OLIMEX_MOD_MPU6050_UI_WIDGET_NAME_MENU_VIEW_CALIBRATE)));
   //  ACE_ASSERT (menu_item_p);
   //  gtk_widget_set_sensitive (GTK_WIDGET (menu_item_p), FALSE);
   //} // end IF
 
   GtkWidget* drawing_area_p =
-      glade_xml_get_widget ((*iterator).second.second,
-                            ACE_TEXT_ALWAYS_CHAR (OLIMEX_MOD_MPU6050_UI_WIDGET_NAME_DRAWING_AREA));
+      GTK_WIDGET (gtk_builder_get_object ((*iterator).second.second,
+                                          ACE_TEXT_ALWAYS_CHAR (OLIMEX_MOD_MPU6050_UI_WIDGET_NAME_DRAWING_AREA)));
   ACE_ASSERT (drawing_area_p);
 
-  GtkCurve* curve_p =
-    GTK_CURVE (glade_xml_get_widget ((*iterator).second.second,
-                                     ACE_TEXT_ALWAYS_CHAR (OLIMEX_MOD_MPU6050_UI_WIDGET_NAME_CURVE)));
-  ACE_ASSERT (curve_p);
-  // *WARNING*: glade/gtk crashes when declaring the curve type to be anything
-  //            other than GTK_CURVE_TYPE_SPLINE (default)
-  //gtk_curve_set_curve_type (curve_p, GTK_CURVE_TYPE_FREE);
-  gtk_curve_set_range (curve_p,
-                       0.0F,
-                       static_cast <gfloat> (OLIMEX_MOD_MPU6050_TEMPERATURE_BUFFER_SIZE - 1),
-                       0.0F,
-                       100.0F);
-  gtk_curve_set_vector (curve_p,
-                        OLIMEX_MOD_MPU6050_TEMPERATURE_BUFFER_SIZE,
-                        cb_data_p->temperature);
+  // GtkCurve* curve_p =
+  //   GTK_CURVE (gtk_builder_get_object ((*iterator).second.second,
+  //                                    ACE_TEXT_ALWAYS_CHAR (OLIMEX_MOD_MPU6050_UI_WIDGET_NAME_CURVE)));
+  // ACE_ASSERT (curve_p);
+  // // *WARNING*: glade/gtk crashes when declaring the curve type to be anything
+  // //            other than GTK_CURVE_TYPE_SPLINE (default)
+  // //gtk_curve_set_curve_type (curve_p, GTK_CURVE_TYPE_FREE);
+  // gtk_curve_set_range (curve_p,
+  //                      0.0F,
+  //                      static_cast <gfloat> (OLIMEX_MOD_MPU6050_TEMPERATURE_BUFFER_SIZE - 1),
+  //                      0.0F,
+  //                      100.0F);
+  // gtk_curve_set_vector (curve_p,
+  //                       OLIMEX_MOD_MPU6050_TEMPERATURE_BUFFER_SIZE,
+  //                       cb_data_p->temperature);
 
   GtkStatusbar* status_bar_p =
-      GTK_STATUSBAR (glade_xml_get_widget ((*iterator).second.second,
+      GTK_STATUSBAR (gtk_builder_get_object ((*iterator).second.second,
                                            ACE_TEXT_ALWAYS_CHAR (OLIMEX_MOD_MPU6050_UI_WIDGET_NAME_STATUS_BAR)));
   ACE_ASSERT (status_bar_p);
   cb_data_p->contextIdData =
@@ -143,7 +141,7 @@ idle_initialize_ui_cb (gpointer userData_in)
 //                    G_CALLBACK (delete_event_cb),
 //                    NULL);
   GtkWidget* widget_p =
-      GTK_WIDGET (glade_xml_get_widget ((*iterator).second.second,
+      GTK_WIDGET (gtk_builder_get_object ((*iterator).second.second,
                                         ACE_TEXT_ALWAYS_CHAR (OLIMEX_MOD_MPU6050_UI_WIDGET_NAME_MENU_FILE_QUIT)));
   ACE_ASSERT (widget_p);
   g_signal_connect (G_OBJECT (widget_p),
@@ -152,7 +150,7 @@ idle_initialize_ui_cb (gpointer userData_in)
                     cb_data_p);
 
   widget_p =
-    GTK_WIDGET (glade_xml_get_widget ((*iterator).second.second,
+    GTK_WIDGET (gtk_builder_get_object ((*iterator).second.second,
                                       ACE_TEXT_ALWAYS_CHAR (OLIMEX_MOD_MPU6050_UI_WIDGET_NAME_MENU_VIEW_CALIBRATE)));
   ACE_ASSERT (widget_p);
   g_signal_connect (G_OBJECT (widget_p),
@@ -161,7 +159,7 @@ idle_initialize_ui_cb (gpointer userData_in)
                     cb_data_p);
 
   widget_p =
-      GTK_WIDGET (glade_xml_get_widget ((*iterator).second.second,
+      GTK_WIDGET (gtk_builder_get_object ((*iterator).second.second,
                                         ACE_TEXT_ALWAYS_CHAR (OLIMEX_MOD_MPU6050_UI_WIDGET_NAME_MENU_HELP_ABOUT)));
   ACE_ASSERT (widget_p);
   g_signal_connect (G_OBJECT (widget_p),
@@ -174,46 +172,46 @@ idle_initialize_ui_cb (gpointer userData_in)
                             about_dialog_p);
 
   // step3a: initialize OpenGL
-  if (!gtk_gl_init_check (&cb_data_p->argc, &cb_data_p->argv))
-  {
-    ACE_DEBUG ((LM_ERROR,
-                ACE_TEXT ("failed to gtk_gl_init_check(): \"%m\", aborting\n")));
-    return G_SOURCE_REMOVE;
-  } // end IF
+  // if (!gtk_gl_init_check (&cb_data_p->argc, &cb_data_p->argv))
+  // {
+  //   ACE_DEBUG ((LM_ERROR,
+  //               ACE_TEXT ("failed to gtk_gl_init_check(): \"%m\", aborting\n")));
+  //   return G_SOURCE_REMOVE;
+  // } // end IF
 
-  int mode = (GDK_GL_MODE_RGBA  |
-              GDK_GL_MODE_DEPTH);
-  if (cb_data_p->openGLDoubleBuffered)
-    mode |= GDK_GL_MODE_DOUBLE;
-  GdkGLConfig* configuration_p =
-      gdk_gl_config_new_by_mode (static_cast<GdkGLConfigMode> (mode));
-  if (!configuration_p)
-  {
-    ACE_DEBUG ((LM_ERROR,
-                ACE_TEXT ("failed to gdk_gl_config_new_by_mode(): \"%m\", aborting\n")));
-    return G_SOURCE_REMOVE;
-  } // end IF
+  // int mode = (GDK_GL_MODE_RGBA  |
+  //             GDK_GL_MODE_DEPTH);
+  // if (cb_data_p->openGLDoubleBuffered)
+  //   mode |= GDK_GL_MODE_DOUBLE;
+  // GdkGLConfig* configuration_p =
+  //     gdk_gl_config_new_by_mode (static_cast<GdkGLConfigMode> (mode));
+  // if (!configuration_p)
+  // {
+  //   ACE_DEBUG ((LM_ERROR,
+  //               ACE_TEXT ("failed to gdk_gl_config_new_by_mode(): \"%m\", aborting\n")));
+  //   return G_SOURCE_REMOVE;
+  // } // end IF
 
-  if (gtk_widget_get_realized (drawing_area_p))
-    gtk_widget_unrealize (drawing_area_p);
-  if (!gtk_widget_set_gl_capability (drawing_area_p,    // (container) widget
-                                     configuration_p,   // GdkGLConfig: configuration
-                                     NULL,              // GdkGLContext: share list
-                                     TRUE,              // direct rendering ?
-                                     GDK_GL_RGBA_TYPE)) // render_type
-  {
-    ACE_DEBUG ((LM_ERROR,
-                ACE_TEXT ("failed to gtk_widget_set_gl_capability(): \"%m\", aborting\n")));
+  // if (gtk_widget_get_realized (drawing_area_p))
+  //   gtk_widget_unrealize (drawing_area_p);
+  // if (!gtk_widget_set_gl_capability (drawing_area_p,    // (container) widget
+  //                                    configuration_p,   // GdkGLConfig: configuration
+  //                                    NULL,              // GdkGLContext: share list
+  //                                    TRUE,              // direct rendering ?
+  //                                    GDK_GL_RGBA_TYPE)) // render_type
+  // {
+  //   ACE_DEBUG ((LM_ERROR,
+  //               ACE_TEXT ("failed to gtk_widget_set_gl_capability(): \"%m\", aborting\n")));
 
-    // clean up
-    g_free (configuration_p);
+  //   // clean up
+  //   g_free (configuration_p);
 
-    return G_SOURCE_REMOVE;
-  } // end IF
-  // *TODO*: free configuration_p ?
+  //   return G_SOURCE_REMOVE;
+  // } // end IF
+  // // *TODO*: free configuration_p ?
 
   // step3b: initialize GLUT
-  glutInit (&cb_data_p->argc, cb_data_p->argv);
+  glutInit (NULL, NULL);
 
   // step4: connect custom signals
   g_signal_connect (drawing_area_p,
@@ -269,7 +267,7 @@ idle_initialize_ui_cb (gpointer userData_in)
   //  return G_SOURCE_REMOVE;
   //} // end IF
   else
-    cb_data_p->eventSourceIds.insert (cb_data_p->openGLRefreshId);
+    cb_data_p->UIState->eventSourceIds.insert (cb_data_p->openGLRefreshId);
 
   // one-shot action
   return G_SOURCE_REMOVE;
@@ -280,16 +278,14 @@ idle_finalize_ui_cb (gpointer userData_in)
 {
   OLIMEX_MOD_MPU6050_TRACE (ACE_TEXT ("::idle_finalize_ui_cb"));
 
-  Olimex_Mod_MPU6050_GtkCBData* cb_data_p =
-      static_cast<Olimex_Mod_MPU6050_GtkCBData*> (userData_in);
-
   // sanity check(s)
+  struct Olimex_Mod_MPU6050_GTK_CBData* cb_data_p =
+      static_cast<struct Olimex_Mod_MPU6050_GTK_CBData*> (userData_in);
   ACE_ASSERT (cb_data_p);
+  ACE_ASSERT (cb_data_p->UIState);
 
   // synch access
-  {
-    ACE_Guard<ACE_SYNCH_MUTEX> aGuard (cb_data_p->lock);
-
+  { ACE_Guard<ACE_SYNCH_MUTEX> aGuard (cb_data_p->UIState->lock);
     unsigned int num_messages = cb_data_p->messageQueue.size ();
     while (!cb_data_p->messageQueue.empty ())
     {
@@ -307,7 +303,7 @@ idle_finalize_ui_cb (gpointer userData_in)
     g_source_remove (cb_data_p->openGLRefreshId);
     cb_data_p->openGLRefreshId = 0;
   } // end iF
-  cb_data_p->eventSourceIds.clear ();
+  cb_data_p->UIState->eventSourceIds.clear ();
 
   if (glIsList (cb_data_p->openGLAxesListId))
   {
@@ -332,8 +328,8 @@ button_cb (GtkWidget* widget_in,
 
   ACE_UNUSED_ARG (event_in);
   ACE_UNUSED_ARG (userData_in);
-//  Olimex_Mod_MPU6050_GtkCBData* cb_data_p =
-//      reinterpret_cast<Olimex_Mod_MPU6050_GtkCBData*> (userData_in);
+//  struct Olimex_Mod_MPU6050_GTK_CBData* cb_data_p =
+//      reinterpret_cast<struct Olimex_Mod_MPU6050_GTK_CBData*> (userData_in);
 
 //  // sanity check(s)
 //  ACE_ASSERT (cb_data_p);
@@ -352,33 +348,29 @@ configure_cb (GtkWidget* widget_in,
 
   static bool is_first_invokation = true;
 
-  Olimex_Mod_MPU6050_GtkCBData* cb_data_p =
-      reinterpret_cast<Olimex_Mod_MPU6050_GtkCBData*> (userData_in);
-
   // sanity check(s)
+  struct Olimex_Mod_MPU6050_GTK_CBData* cb_data_p =
+      reinterpret_cast<struct Olimex_Mod_MPU6050_GTK_CBData*> (userData_in);
   ACE_ASSERT (widget_in);
   ACE_ASSERT (cb_data_p);
-//  ACE_ASSERT (!cb_data_p->openGLContext);
-//  ACE_ASSERT (!cb_data_p->openGLDrawable);
+  ACE_ASSERT (cb_data_p->UIState);
 
-  cb_data_p->openGLContext = gtk_widget_get_gl_context (widget_in);
-  ACE_ASSERT (cb_data_p->openGLContext);
-  cb_data_p->openGLDrawable = gtk_widget_get_gl_drawable (widget_in);
-  ACE_ASSERT (cb_data_p->openGLDrawable);
+  // cb_data_p->openGLContext = gtk_widget_get_gl_context (widget_in);
+  // ACE_ASSERT (cb_data_p->openGLContext);
+  // cb_data_p->openGLDrawable = gtk_widget_get_gl_drawable (widget_in);
+  // ACE_ASSERT (cb_data_p->openGLDrawable);
 
-  if (!gdk_gl_drawable_gl_begin (cb_data_p->openGLDrawable,
-                                 cb_data_p->openGLContext))
-  {
-    ACE_DEBUG ((LM_ERROR,
-                ACE_TEXT ("failed to gdk_gl_drawable_gl_begin(), aborting\n")));
-    is_first_invokation = false;
-    return FALSE; // propagate
-  } // end IF
+  // if (!gdk_gl_drawable_gl_begin (cb_data_p->openGLDrawable,
+  //                                cb_data_p->openGLContext))
+  // {
+  //   ACE_DEBUG ((LM_ERROR,
+  //               ACE_TEXT ("failed to gdk_gl_drawable_gl_begin(), aborting\n")));
+  //   is_first_invokation = false;
+  //   return FALSE; // propagate
+  // } // end IF
 
   if (!cb_data_p->openGLAxesListId)
-  {
-    ACE_Guard<ACE_SYNCH_MUTEX> aGuard (cb_data_p->lock);
-
+  { ACE_Guard<ACE_SYNCH_MUTEX> aGuard (cb_data_p->UIState->lock);
     cb_data_p->openGLAxesListId = ::axes ();
     if (!glIsList (cb_data_p->openGLAxesListId))
     {
@@ -391,9 +383,12 @@ configure_cb (GtkWidget* widget_in,
 
   glMatrixMode (GL_PROJECTION);
   // specify the lower left corner, as well as width/height of the viewport
+  GtkAllocation allocation_s;
+  gtk_widget_get_allocation (widget_in,
+                             &allocation_s);
   glViewport (0, 0,
-              widget_in->allocation.width,
-              widget_in->allocation.height);
+              allocation_s.width,
+              allocation_s.height);
 
   // setup a perspective projection
   // *NOTE*: initially, the "camera" points down the negative z-axis (y is up)
@@ -406,7 +401,7 @@ configure_cb (GtkWidget* widget_in,
   fH =
    ::tan (OLIMEX_MOD_MPU6050_OPENGL_PERSPECTIVE_FOVY / 360.0 * M_PI) *
    OLIMEX_MOD_MPU6050_OPENGL_PERSPECTIVE_ZNEAR;
-  fW = fH * (widget_in->allocation.width / widget_in->allocation.height);
+  fW = fH * (allocation_s.width / allocation_s.height);
   glFrustum (-fW, fW,
              -fH, fH,
              OLIMEX_MOD_MPU6050_OPENGL_PERSPECTIVE_ZNEAR,
@@ -510,7 +505,7 @@ configure_cb (GtkWidget* widget_in,
     glEnable (GL_LIGHT0);
   } // end IF
 
-  gdk_gl_drawable_gl_end (cb_data_p->openGLDrawable);
+  // gdk_gl_drawable_gl_end (cb_data_p->openGLDrawable);
 
   is_first_invokation = false;
 
@@ -542,22 +537,22 @@ expose_cb (GtkWidget* widget_in,
   OLIMEX_MOD_MPU6050_TRACE (ACE_TEXT ("::expose_cb"));
 
   ACE_UNUSED_ARG (event_in);
-  Olimex_Mod_MPU6050_GtkCBData* cb_data_p =
-      reinterpret_cast<Olimex_Mod_MPU6050_GtkCBData*> (userData_in);
 
   // sanity check(s)
   ACE_ASSERT (widget_in);
+  struct Olimex_Mod_MPU6050_GTK_CBData* cb_data_p =
+      reinterpret_cast<struct Olimex_Mod_MPU6050_GTK_CBData*> (userData_in);
   ACE_ASSERT (cb_data_p);
 
 //  ACE_Guard<ACE_SYNCH_RECURSIVE_MUTEX> aGuard (cb_data_p->lock);
 
-  if (!gdk_gl_drawable_gl_begin (cb_data_p->openGLDrawable,
-                                 cb_data_p->openGLContext))
-  {
-    ACE_DEBUG ((LM_ERROR,
-                ACE_TEXT ("failed to gdk_gl_drawable_gl_begin(), aborting\n")));
-    return FALSE; // propagate
-  } // end IF
+  // if (!gdk_gl_drawable_gl_begin (cb_data_p->openGLDrawable,
+  //                                cb_data_p->openGLContext))
+  // {
+  //   ACE_DEBUG ((LM_ERROR,
+  //               ACE_TEXT ("failed to gdk_gl_drawable_gl_begin(), aborting\n")));
+  //   return FALSE; // propagate
+  // } // end IF
 
   // step1: clear screen
   glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
@@ -590,10 +585,14 @@ expose_cb (GtkWidget* widget_in,
   // step3b: draw axes
   // restrict viewport to upper left corner
   static GLsizei axes_height;
+  GtkAllocation allocation_s;
+  gtk_widget_get_allocation (widget_in,
+                             &allocation_s);
+
   axes_height =
-    static_cast<GLsizei> (widget_in->allocation.height * OLIMEX_MOD_MPU6050_OPENGL_AXES_SIZE);
-  glViewport (0, widget_in->allocation.height - axes_height,
-              static_cast<GLsizei> (widget_in->allocation.width * OLIMEX_MOD_MPU6050_OPENGL_AXES_SIZE),
+    static_cast<GLsizei> (allocation_s.height * OLIMEX_MOD_MPU6050_OPENGL_AXES_SIZE);
+  glViewport (0, allocation_s.height - axes_height,
+              static_cast<GLsizei> (allocation_s.width * OLIMEX_MOD_MPU6050_OPENGL_AXES_SIZE),
               axes_height);
   //glScissor (0, allocation.height - axes_height,
   //           static_cast<GLsizei> (allocation.width * OLIMEX_MOD_MPU6050_OPENGL_AXES_SIZE),
@@ -635,8 +634,8 @@ expose_cb (GtkWidget* widget_in,
   //glClearColor (clear_color[0], clear_color[1], clear_color[2], clear_color[3]);
   //glDisable (GL_SCISSOR_TEST);
   glViewport (0, 0,
-              widget_in->allocation.width,
-              widget_in->allocation.height);
+              allocation_s.width,
+              allocation_s.height);
 
   // return to 3D-projection
   glPopMatrix ();
@@ -646,8 +645,8 @@ expose_cb (GtkWidget* widget_in,
   glMatrixMode (GL_PROJECTION);
   glPushMatrix ();
   glLoadIdentity ();
-  glOrtho (0.0, widget_in->allocation.width,
-           0.0, widget_in->allocation.height,
+  glOrtho (0.0, allocation_s.width,
+           0.0, allocation_s.height,
            OLIMEX_MOD_MPU6050_OPENGL_ORTHO_ZNEAR,
            OLIMEX_MOD_MPU6050_OPENGL_ORTHO_ZFAR);
   glMatrixMode (GL_MODELVIEW);
@@ -677,12 +676,12 @@ expose_cb (GtkWidget* widget_in,
   } // end IF
 
   // step4: swap buffers / flush
-  if (cb_data_p->openGLDoubleBuffered)
-    gdk_gl_drawable_swap_buffers (cb_data_p->openGLDrawable);
-  else
+  // if (cb_data_p->openGLDoubleBuffered)
+  //   gdk_gl_drawable_swap_buffers (cb_data_p->openGLDrawable);
+  // else
     glFlush ();
 
-  gdk_gl_drawable_gl_end (cb_data_p->openGLDrawable);
+  // gdk_gl_drawable_gl_end (cb_data_p->openGLDrawable);
 
   return TRUE; // done (do not propagate further)
 }
@@ -692,25 +691,21 @@ process_cb (gpointer userData_in)
 {
   OLIMEX_MOD_MPU6050_TRACE (ACE_TEXT ("::process_cb"));
 
-  Olimex_Mod_MPU6050_GtkCBData* cb_data_p =
-      reinterpret_cast<Olimex_Mod_MPU6050_GtkCBData*> (userData_in);
-
   // sanity check(s)
+  struct Olimex_Mod_MPU6050_GTK_CBData* cb_data_p =
+      reinterpret_cast<struct Olimex_Mod_MPU6050_GTK_CBData*> (userData_in);
   ACE_ASSERT (cb_data_p);
-
-  Common_UI_GladeXMLsIterator_t iterator =
-    cb_data_p->gladeXML.find (ACE_TEXT_ALWAYS_CHAR (COMMON_UI_GTK_DEFINITION_DESCRIPTOR_MAIN));
-  // sanity check(s)
-  ACE_ASSERT (iterator != cb_data_p->gladeXML.end ());
+  Common_UI_GTK_BuildersIterator_t iterator =
+    cb_data_p->UIState->builders.find (ACE_TEXT_ALWAYS_CHAR (COMMON_UI_DEFINITION_DESCRIPTOR_MAIN));
+  ACE_ASSERT (iterator != cb_data_p->UIState->builders.end ());
 
   // step0: process event queue
   GtkStatusbar* status_bar_p =
-      GTK_STATUSBAR (glade_xml_get_widget ((*iterator).second.second,
+      GTK_STATUSBAR (gtk_builder_get_object ((*iterator).second.second,
                                            ACE_TEXT_ALWAYS_CHAR (OLIMEX_MOD_MPU6050_UI_WIDGET_NAME_STATUS_BAR)));
   ACE_ASSERT (status_bar_p);
   Olimex_Mod_MPU6050_Message* message_p = NULL;
-  {
-    ACE_Guard<ACE_SYNCH_MUTEX> aGuard (cb_data_p->lock);
+  { ACE_Guard<ACE_SYNCH_MUTEX> aGuard (cb_data_p->UIState->lock);
     if (cb_data_p->eventQueue.empty ())
     {
       return TRUE; // --> continue processing
@@ -815,19 +810,19 @@ process_cb (gpointer userData_in)
   cb_data_p->openGLCamera.rotation[2] += angle_z;
 
   // step2b: temperature
-  GtkCurve* curve_p =
-    GTK_CURVE (glade_xml_get_widget ((*iterator).second.second,
-                                     ACE_TEXT_ALWAYS_CHAR (OLIMEX_MOD_MPU6050_UI_WIDGET_NAME_CURVE)));
-  ACE_ASSERT (curve_p);
-  cb_data_p->temperatureIndex++;
-  if (cb_data_p->temperatureIndex == OLIMEX_MOD_MPU6050_TEMPERATURE_BUFFER_SIZE)
-  {
-    cb_data_p->temperatureIndex = 0;
-    //ACE_OS::memset (cb_data_p->temperature,
-    //                0,
-    //                sizeof (cb_data_p->temperature));
-    gtk_curve_reset (curve_p);
-  } // end IF
+  // GtkCurve* curve_p =
+  //   GTK_CURVE (gtk_builder_get_object ((*iterator).second.second,
+  //                                    ACE_TEXT_ALWAYS_CHAR (OLIMEX_MOD_MPU6050_UI_WIDGET_NAME_CURVE)));
+  // ACE_ASSERT (curve_p);
+  // cb_data_p->temperatureIndex++;
+  // if (cb_data_p->temperatureIndex == OLIMEX_MOD_MPU6050_TEMPERATURE_BUFFER_SIZE)
+  // {
+  //   cb_data_p->temperatureIndex = 0;
+  //   //ACE_OS::memset (cb_data_p->temperature,
+  //   //                0,
+  //   //                sizeof (cb_data_p->temperature));
+  //   gtk_curve_reset (curve_p);
+  // } // end IF
   cb_data_p->temperature[cb_data_p->temperatureIndex * 2] =
     static_cast<gfloat> (cb_data_p->temperatureIndex);
   cb_data_p->temperature[(cb_data_p->temperatureIndex * 2) + 1] =
@@ -839,18 +834,18 @@ process_cb (gpointer userData_in)
   //                     static_cast<gfloat> (cb_data_p->temperatureIndex),
   //                     0.0F,
   //                     100.0F);
-  gtk_curve_set_vector (curve_p,
-                        OLIMEX_MOD_MPU6050_TEMPERATURE_BUFFER_SIZE,
-                        //cb_data_p->temperatureIndex + 1,
-                        cb_data_p->temperature);
+  // gtk_curve_set_vector (curve_p,
+  //                       OLIMEX_MOD_MPU6050_TEMPERATURE_BUFFER_SIZE,
+  //                       //cb_data_p->temperatureIndex + 1,
+  //                       cb_data_p->temperature);
 
 //expose:
   // invalidate drawing area
   // *NOTE*: the drawing area is not refreshed automatically unless the window
   //         is resized
   GtkWidget* drawing_area_p =
-      glade_xml_get_widget ((*iterator).second.second,
-                            ACE_TEXT_ALWAYS_CHAR (OLIMEX_MOD_MPU6050_UI_WIDGET_NAME_DRAWING_AREA));
+      GTK_WIDGET (gtk_builder_get_object ((*iterator).second.second,
+                                          ACE_TEXT_ALWAYS_CHAR (OLIMEX_MOD_MPU6050_UI_WIDGET_NAME_DRAWING_AREA)));
   ACE_ASSERT (drawing_area_p);
   gtk_widget_queue_draw (drawing_area_p);
   //gtk_widget_queue_draw (GTK_WIDGET (curve_p));
@@ -880,8 +875,8 @@ key_cb (GtkWidget* widget_in,
 {
   OLIMEX_MOD_MPU6050_TRACE (ACE_TEXT ("::key_cb"));
 
-  Olimex_Mod_MPU6050_GtkCBData* cb_data_p =
-      reinterpret_cast<Olimex_Mod_MPU6050_GtkCBData*> (userData_in);
+  struct Olimex_Mod_MPU6050_GTK_CBData* cb_data_p =
+      reinterpret_cast<struct Olimex_Mod_MPU6050_GTK_CBData*> (userData_in);
 
   // sanity check(s)
   ACE_ASSERT (event_in);
@@ -969,8 +964,8 @@ motion_cb (GtkWidget* widget_in,
 {
   OLIMEX_MOD_MPU6050_TRACE (ACE_TEXT ("::motion_cb"));
 
-  Olimex_Mod_MPU6050_GtkCBData* cb_data_p =
-    reinterpret_cast<Olimex_Mod_MPU6050_GtkCBData*> (userData_in);
+  struct Olimex_Mod_MPU6050_GTK_CBData* cb_data_p =
+    reinterpret_cast<struct Olimex_Mod_MPU6050_GTK_CBData*> (userData_in);
 
   // sanity check(s)
   ACE_ASSERT (event_in);
@@ -1026,32 +1021,32 @@ about_clicked_gtk_cb (GtkWidget* widget_in,
   OLIMEX_MOD_MPU6050_TRACE (ACE_TEXT ("::about_clicked_gtk_cb"));
 
   ACE_UNUSED_ARG (widget_in);
-  Olimex_Mod_MPU6050_GtkCBData* cb_data_p =
-      static_cast<Olimex_Mod_MPU6050_GtkCBData*> (userData_in);
+  struct Olimex_Mod_MPU6050_GTK_CBData* cb_data_p =
+      static_cast<struct Olimex_Mod_MPU6050_GTK_CBData*> (userData_in);
 
   // sanity check(s)
   ACE_ASSERT (cb_data_p);
 
-  Common_UI_GladeXMLsIterator_t iterator =
-    cb_data_p->gladeXML.find (ACE_TEXT_ALWAYS_CHAR (COMMON_UI_GTK_DEFINITION_DESCRIPTOR_MAIN));
+  Common_UI_GTK_BuildersIterator_t iterator =
+    cb_data_p->UIState->builders.find (ACE_TEXT_ALWAYS_CHAR (COMMON_UI_DEFINITION_DESCRIPTOR_MAIN));
   // sanity check(s)
-  ACE_ASSERT (iterator != cb_data_p->gladeXML.end ());
+  ACE_ASSERT (iterator != cb_data_p->UIState->builders.end ());
 
   // retrieve about dialog handle
   GtkWidget* about_dialog =
-      GTK_WIDGET (glade_xml_get_widget ((*iterator).second.second,
+      GTK_WIDGET (gtk_builder_get_object ((*iterator).second.second,
                                         ACE_TEXT_ALWAYS_CHAR (OLIMEX_MOD_MPU6050_UI_WIDGET_NAME_DIALOG_ABOUT)));
   ACE_ASSERT (about_dialog);
   if (!about_dialog)
   {
     ACE_DEBUG ((LM_ERROR,
-                ACE_TEXT ("failed to glade_xml_get_widget(\"%s\"): \"%m\", aborting\n"),
+                ACE_TEXT ("failed to gtk_builder_get_object(\"%s\"): \"%m\", aborting\n"),
                 ACE_TEXT (OLIMEX_MOD_MPU6050_UI_WIDGET_NAME_DIALOG_ABOUT)));
     return FALSE; // propagate
   } // end IF
 
   // draw it
-  if (!GTK_WIDGET_VISIBLE (about_dialog))
+  if (!gtk_widget_get_visible (about_dialog))
     gtk_widget_show_all (about_dialog);
 
   return TRUE; // done (do not propagate further)
@@ -1064,24 +1059,20 @@ calibrate_clicked_gtk_cb (GtkWidget* widget_in,
   OLIMEX_MOD_MPU6050_TRACE (ACE_TEXT ("::calibrate_clicked_gtk_cb"));
 
   ACE_UNUSED_ARG (widget_in);
-  Olimex_Mod_MPU6050_GtkCBData* cb_data_p =
-    static_cast<Olimex_Mod_MPU6050_GtkCBData*> (userData_in);
 
   // sanity check(s)
+  struct Olimex_Mod_MPU6050_GTK_CBData* cb_data_p =
+    static_cast<struct Olimex_Mod_MPU6050_GTK_CBData*> (userData_in);
   ACE_ASSERT (cb_data_p);
-
-  Common_UI_GladeXMLsIterator_t iterator =
-    cb_data_p->gladeXML.find (ACE_TEXT_ALWAYS_CHAR (COMMON_UI_GTK_DEFINITION_DESCRIPTOR_MAIN));
-  // sanity check(s)
-  ACE_ASSERT (iterator != cb_data_p->gladeXML.end ());
+  Common_UI_GTK_BuildersIterator_t iterator =
+    cb_data_p->UIState->builders.find (ACE_TEXT_ALWAYS_CHAR (COMMON_UI_DEFINITION_DESCRIPTOR_MAIN));
+  ACE_ASSERT (iterator != cb_data_p->UIState->builders.end ());
 
   if (cb_data_p->clientMode)
   {
-    ACE_OS::memset (&cb_data_p->clientSensorBias,
-                    0,
-                    sizeof (cb_data_p->clientSensorBias));
+    ACE_OS::memset (&cb_data_p->clientSensorBias, 0, sizeof (cb_data_p->clientSensorBias));
 
-    ACE_Guard<ACE_SYNCH_MUTEX> aGuard (cb_data_p->lock);
+    ACE_Guard<ACE_SYNCH_MUTEX> aGuard (cb_data_p->UIState->lock);
     if (cb_data_p->eventQueue.empty ())
     {
       ACE_DEBUG ((LM_WARNING,
@@ -1120,7 +1111,7 @@ calibrate_clicked_gtk_cb (GtkWidget* widget_in,
       return FALSE; // propagate
     } // end IF
     GtkStatusbar* status_bar_p =
-      GTK_STATUSBAR (glade_xml_get_widget ((*iterator).second.second,
+      GTK_STATUSBAR (gtk_builder_get_object ((*iterator).second.second,
                                            ACE_TEXT_ALWAYS_CHAR (OLIMEX_MOD_MPU6050_UI_WIDGET_NAME_STATUS_BAR)));
     ACE_ASSERT (status_bar_p);
     gtk_statusbar_push (status_bar_p,

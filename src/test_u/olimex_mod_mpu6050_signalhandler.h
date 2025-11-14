@@ -21,17 +21,15 @@
 #ifndef OLIMEX_MOD_MPU6050_SIGNALHANDLER_H
 #define OLIMEX_MOD_MPU6050_SIGNALHANDLER_H
 
-#include <ace/Global_Macros.h>
+#include "ace/Global_Macros.h"
 
-#include "common_signalhandler.h"
-#include "common_isignal.h"
+#include "common_signal_handler.h"
 
 #include "olimex_mod_mpu6050_network.h"
 #include "olimex_mod_mpu6050_types.h"
 
 class Olimex_Mod_MPU6050_SignalHandler
- : public Common_SignalHandler_T<Olimex_Mod_MPU6050_SignalHandlerConfiguration>
- , public Common_ISignal
+ : public Common_SignalHandler_T<struct Olimex_Mod_MPU6050_SignalHandlerConfiguration>
 {
  public:
   Olimex_Mod_MPU6050_SignalHandler ();
@@ -41,7 +39,7 @@ class Olimex_Mod_MPU6050_SignalHandler
   virtual bool handleSignal (int); // signal
 
  private:
-  typedef Common_SignalHandler_T<Olimex_Mod_MPU6050_SignalHandlerConfiguration> inherited;
+  typedef Common_SignalHandler_T<struct Olimex_Mod_MPU6050_SignalHandlerConfiguration> inherited;
 
   ACE_UNIMPLEMENTED_FUNC (Olimex_Mod_MPU6050_SignalHandler (const Olimex_Mod_MPU6050_SignalHandler&));
   ACE_UNIMPLEMENTED_FUNC (Olimex_Mod_MPU6050_SignalHandler& operator= (const Olimex_Mod_MPU6050_SignalHandler&));

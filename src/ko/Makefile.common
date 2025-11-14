@@ -1,15 +1,15 @@
 if DO_CROSS_COMPILE
-  ARCH = arm
-  CROSS_COMPILE = arm-linux-gnu-
-  export ARCH CROSS_COMPILE
+	ARCH = arm
+	CROSS_COMPILE = arm-linux-gnu-
+	export ARCH CROSS_COMPILE
 else
-  ARCH = @BUILD_PLATFORM@
-  export ARCH
+	ARCH = @BUILD_PLATFORM@
+	export ARCH
 endif
 
 if DEBUG
-  DEBUG=1
-  export DEBUG
+	DEBUG=1
+	export DEBUG
 endif
 
 #INSTALL_MOD_PATH=$(shell pwd)
@@ -33,22 +33,22 @@ export KBUILD_VERBOSE
 
 # rule(s)
 $(module_DATA): $(automake_dummy_SOURCES)
-#	mv -f Makefile Makefile.automake
+	mv -f Makefile Makefile.automake
 	@if ! test -f $(abs_srcdir)/Makefile; \
-  then \
-    cp -f $(abs_srcdir)/Makefile.kernel $(abs_srcdir)/Makefile; \
-    echo "created Kbuild Makefile"; \
-  fi;
-	@$(MAKE) -C $(abs_srcdir)
-#	$(MAKE) -C $(KDIR) M=$(abs_srcdir) V=$(KBUILD_VERBOSE) modules
+	then \
+		cp -f $(abs_srcdir)/Makefile.kernel $(abs_srcdir)/Makefile; \
+		echo "created Kbuild Makefile"; \
+		fi;
+#	@$(MAKE) -C $(abs_srcdir)
+	$(MAKE) -C $(KDIR) M=$(abs_srcdir) V=$(KBUILD_VERBOSE) modules
 	@rm -f $(abs_srcdir)/Makefile
-#	mv -f Makefile.automake Makefile
+	mv -f Makefile.automake Makefile
 
 clean-local:
 	@if ! test -f $(abs_srcdir)/Makefile; \
-  then \
-    cp -f $(abs_srcdir)/Makefile.kernel $(abs_srcdir)/Makefile; \
-    echo "created Kbuild Makefile"; \
-  fi;
+	then \
+	  cp -f $(abs_srcdir)/Makefile.kernel $(abs_srcdir)/Makefile; \
+		echo "created Kbuild Makefile"; \
+		fi;
 	@$(MAKE) -C $(abs_srcdir) clean
 	@rm -f $(abs_srcdir)/Makefile

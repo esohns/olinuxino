@@ -30,29 +30,47 @@
 #include "ace/Time_Value.h"
 
 #include "gtk/gtk.h"
-#include "gtk/gtkgl.h"
+#if GTK_CHECK_VERSION (3,0,0)
+#if GTK_CHECK_VERSION (3,16,0)
+#else
+#if defined (GTKGLAREA_SUPPORT)
+#include "gtkgl/gdkgl.h"
+#include "gtkgl/gtkglarea.h"
+//#else
+//#error GTK 3 supports OpenGL natively from 3.16.0 onward; for earlier versions, try gtkglarea (see: git://git.gnome.org/gtkglarea)
+#endif /* GTKGLAREA_SUPPORT */
+#endif /* GTK_CHECK_VERSION (3,16,0) */
+#elif GTK_CHECK_VERSION (2,0,0)
+#if defined (GTKGLAREA_SUPPORT)
+#include "gtkgl/gdkgl.h"
+#include "gtkgl/gtkglarea.h"
+#endif /* GTKGLAREA_SUPPORT */
+#else
+#include "gdk/gdkgl.h"
+#endif /* GTK_CHECK_VERSION (x,0,0) */
 
-#include "glade/glade.h"
+// #include "glade/glade.h"
 
 #include "common_time_common.h"
 
-#include "common_ui_common.h"
+#include "common_ui_gtk_common.h"
 
 #include "stream_base.h"
 #include "stream_common.h"
 #include "stream_control_message.h"
 #include "stream_isessionnotify.h"
+#include "stream_session_manager.h"
 #include "stream_statemachine_control.h"
 
 #include "net_common.h"
-#include "net_configuration.h"
+#include "net_connection_configuration.h"
 #include "net_iconnection.h"
 #include "net_iconnectionmanager.h"
 #include "net_iconnector.h"
 #if defined (ACE_WIN32) || defined (ACE_WIN64)
 #else
 #include "net_netlinksockethandler.h"
-#endif
+#endif // ACE_WIN32 || ACE_WIN64
 
 #include "olimex_mod_mpu6050_defines.h"
 #include "olimex_mod_mpu6050_stream_common.h"
@@ -87,20 +105,18 @@ typedef Olimex_Mod_MPU6050_Events_t::const_iterator Olimex_Mod_MPU6050_EventsIte
 typedef std::deque<Olimex_Mod_MPU6050_Message*> Olimex_Mod_MPU6050_Messages_t;
 typedef Olimex_Mod_MPU6050_Messages_t::const_iterator Olimex_Mod_MPU6050_MessagesIterator_t;
 
-typedef Stream_ControlMessage_T<Stream_ControlMessageType,
-                                Stream_AllocatorConfiguration,
-                                Olimex_Mod_MPU6050_Message,
-                                Olimex_Mod_MPU6050_SessionMessage> Olimex_Mod_MPU6050_ControlMessage_t;
+typedef Stream_ControlMessage_T<enum Stream_ControlType,
+                                enum Stream_ControlMessageType> Olimex_Mod_MPU6050_ControlMessage_t;
 
-typedef Stream_MessageAllocatorHeapBase_T<Stream_AllocatorConfiguration,
+typedef Stream_MessageAllocatorHeapBase_T<ACE_MT_SYNCH,
+                                          struct Stream_AllocatorConfiguration,
                                           Olimex_Mod_MPU6050_ControlMessage_t,
                                           Olimex_Mod_MPU6050_Message,
                                           Olimex_Mod_MPU6050_SessionMessage> Olimex_Mod_MPU6050_MessageAllocator_t;
 
 typedef Stream_INotify_T<Stream_SessionMessageType> Olimex_Mod_MPU6050_IStreamNotify_t;
-typedef Stream_ISessionDataNotify_T<Stream_SessionId_t,
-                                    Olimex_Mod_MPU6050_SessionData,
-                                    Stream_SessionMessageType,
+typedef Stream_ISessionDataNotify_T<struct Olimex_Mod_MPU6050_SessionData,
+                                    enum Stream_SessionMessageType,
                                     Olimex_Mod_MPU6050_Message,
                                     Olimex_Mod_MPU6050_SessionMessage> Olimex_Mod_MPU6050_Notification_t;
 typedef std::list<Olimex_Mod_MPU6050_Notification_t*> Olimex_Mod_MPU6050_Subscribers_t;
@@ -130,12 +146,12 @@ struct Camera
 
 struct Olimex_Mod_MPU6050_Configuration;
 struct Olimex_Mod_MPU6050_UserData
- : Net_UserData
+ : Stream_UserData
 {
-  inline Olimex_Mod_MPU6050_UserData ()
-   : Net_UserData ()
+  Olimex_Mod_MPU6050_UserData ()
+   : Stream_UserData ()
    , configuration (NULL)
-  {};
+  {}
 
   Olimex_Mod_MPU6050_Configuration* configuration;
 };
@@ -146,25 +162,27 @@ struct Olimex_Mod_MPU6050_NetlinkConfiguration;
 struct Olimex_Mod_MPU6050_NetlinkUserData
  : Olimex_Mod_MPU6050_UserData
 {
-  inline Olimex_Mod_MPU6050_NetlinkUserData ()
+  Olimex_Mod_MPU6050_NetlinkUserData ()
    : Olimex_Mod_MPU6050_UserData ()
    , configuration (NULL)
-  {};
+  {}
 
   Olimex_Mod_MPU6050_NetlinkConfiguration* configuration;
 };
-#endif
+#endif // ACE_WIN32 || ACE_WIN64
 
 struct Olimex_Mod_MPU6050_Configuration;
 typedef Stream_Statistic Olimex_Mod_MPU6050_RuntimeStatistic_t;
 struct Olimex_Mod_MPU6050_ConnectionState
+ : Net_StreamConnectionState
 {
-  inline Olimex_Mod_MPU6050_ConnectionState ()
-   : configuration (NULL)
+  Olimex_Mod_MPU6050_ConnectionState ()
+   : Net_StreamConnectionState ()
+   , configuration (NULL)
    , status (NET_CONNECTION_STATUS_INVALID)
    , currentStatistic ()
    , userData (NULL)
-  {};
+  {}
 
   // *TODO*: consider making this a separate entity (i.e. a pointer)
   Olimex_Mod_MPU6050_Configuration*     configuration;
@@ -179,56 +197,49 @@ struct Olimex_Mod_MPU6050_ConnectionState
 struct Olimex_Mod_MPU6050_Configuration;
 struct Olimex_Mod_MPU6050_ConnectionState;
 typedef Net_IConnection_T<ACE_INET_Addr,
-                          Olimex_Mod_MPU6050_Configuration,
-                          Olimex_Mod_MPU6050_ConnectionState,
-                          Olimex_Mod_MPU6050_RuntimeStatistic_t> Olimex_Mod_MPU6050_IConnection_t;
+                          struct Olimex_Mod_MPU6050_ConnectionState,
+                          Net_StreamStatistic_t> Olimex_Mod_MPU6050_IConnection_t;
 struct Olimex_Mod_MPU6050_NetlinkConfiguration;
 struct Olimex_Mod_MPU6050_NetlinkConnectionState;
 #if defined (ACE_WIN32) || defined (ACE_WIN64)
 #else
 typedef Net_IConnection_T<Net_Netlink_Addr,
-                          Olimex_Mod_MPU6050_NetlinkConfiguration,
-                          Olimex_Mod_MPU6050_NetlinkConnectionState,
-                          Olimex_Mod_MPU6050_RuntimeStatistic_t> Olimex_Mod_MPU6050_INetlinkConnection_t;
-#endif
-typedef Net_IConnectionManager_T<ACE_INET_Addr,
-                                 Olimex_Mod_MPU6050_Configuration,
-                                 Olimex_Mod_MPU6050_ConnectionState,
-                                 Olimex_Mod_MPU6050_RuntimeStatistic_t,
-                                 //////
-                                 Olimex_Mod_MPU6050_UserData> Olimex_Mod_MPU6050_IConnectionManager_t;
-#if defined (ACE_WIN32) || defined (ACE_WIN64)
-#else
-typedef Net_IConnectionManager_T<Net_Netlink_Addr,
-                                 Olimex_Mod_MPU6050_NetlinkConfiguration,
-                                 Olimex_Mod_MPU6050_NetlinkConnectionState,
-                                 Olimex_Mod_MPU6050_RuntimeStatistic_t,
-                                 //////
-                                 Olimex_Mod_MPU6050_NetlinkUserData> Olimex_Mod_MPU6050_INetlinkConnectionManager_t;
+                          struct Olimex_Mod_MPU6050_NetlinkConnectionState,
+                          Net_StreamStatistic_t> Olimex_Mod_MPU6050_INetlinkConnection_t;
 #endif
 
-struct Olimex_Mod_MPU6050_SocketHandlerConfiguration
- : Net_SocketHandlerConfiguration
+typedef Stream_Configuration_T<//stream_name_string_,
+                               struct Olimex_Mod_MPU6050_StreamConfiguration,
+                               struct Olimex_Mod_MPU6050_ModuleHandlerConfiguration> Olimex_Mod_MPU6050_StreamConfiguration_t;
+class Olimex_Mod_MPU6050_ConnectionConfiguration
+ : public Net_StreamConnectionConfiguration_T<Olimex_Mod_MPU6050_StreamConfiguration_t,
+                                              NET_TRANSPORTLAYER_UDP>
 {
-  inline Olimex_Mod_MPU6050_SocketHandlerConfiguration ()
-   : Net_SocketHandlerConfiguration ()
+ public:
+  Olimex_Mod_MPU6050_ConnectionConfiguration ()
+   : Net_StreamConnectionConfiguration_T<Olimex_Mod_MPU6050_StreamConfiguration_t,
+                                         NET_TRANSPORTLAYER_UDP> ()
    , userData (NULL)
-  {};
+  {}
 
   Olimex_Mod_MPU6050_UserData* userData;
 };
 
 typedef Net_IConnector_T<ACE_INET_Addr,
-                         Olimex_Mod_MPU6050_SocketHandlerConfiguration> Olimex_Mod_MPU6050_IConnector_t;
+                         Olimex_Mod_MPU6050_ConnectionConfiguration> Olimex_Mod_MPU6050_IConnector_t;
+typedef Net_IAsynchConnector_T<ACE_INET_Addr,
+                               Olimex_Mod_MPU6050_ConnectionConfiguration> Olimex_Mod_MPU6050_IAsynchConnector_t;
 struct Olimex_Mod_MPU6050_SignalHandlerConfiguration
+ : Common_SignalHandlerConfiguration
 {
- inline Olimex_Mod_MPU6050_SignalHandlerConfiguration ()
-  : actionTimerID (-1)
-  , consoleMode (false)
-  , interfaceHandle (NULL)
-  , peerAddress ()
-  , useReactor (false)
-  {};
+  Olimex_Mod_MPU6050_SignalHandlerConfiguration ()
+   : Common_SignalHandlerConfiguration ()
+   , actionTimerID (-1)
+   , consoleMode (false)
+   , interfaceHandle (NULL)
+   , peerAddress ()
+   , useReactor (false)
+  {}
 
   long                             actionTimerID;
   bool                             consoleMode;
@@ -239,57 +250,87 @@ struct Olimex_Mod_MPU6050_SignalHandlerConfiguration
 
 #if defined (ACE_WIN32) || defined (ACE_WIN64)
 #else
-struct Olimex_Mod_MPU6050_NetlinkSocketHandlerConfiguration
- : Olimex_Mod_MPU6050_SocketHandlerConfiguration
+typedef Stream_Configuration_T<//stream_name_string_,
+                               struct Olimex_Mod_MPU6050_NetlinkStreamConfiguration,
+                               struct Olimex_Mod_MPU6050_NetlinkModuleHandlerConfiguration> Olimex_Mod_MPU6050_NetlinkStreamConfiguration_t;
+class Olimex_Mod_MPU6050_NetlinkConnectionConfiguration
+ : public Net_StreamConnectionConfiguration_T<Olimex_Mod_MPU6050_NetlinkStreamConfiguration_t,
+                                              NET_TRANSPORTLAYER_NETLINK>
 {
-  inline Olimex_Mod_MPU6050_NetlinkSocketHandlerConfiguration ()
-   : Olimex_Mod_MPU6050_SocketHandlerConfiguration ()
+ public:
+  Olimex_Mod_MPU6050_NetlinkConnectionConfiguration ()
+   : Net_StreamConnectionConfiguration_T<Olimex_Mod_MPU6050_NetlinkStreamConfiguration_t,
+                                         NET_TRANSPORTLAYER_NETLINK> ()
    , userData (NULL)
-  {};
+  {}
 
   Olimex_Mod_MPU6050_NetlinkUserData* userData;
 };
+#endif // ACE_WIN32 || ACE_WIN64
+
+typedef Net_IConnectionManager_T<ACE_INET_Addr,
+                                 Olimex_Mod_MPU6050_ConnectionConfiguration,
+                                 struct Olimex_Mod_MPU6050_ConnectionState,
+                                 Net_StreamStatistic_t,
+                                 //////
+                                 struct Olimex_Mod_MPU6050_UserData> Olimex_Mod_MPU6050_IConnectionManager_t;
+#if defined (ACE_WIN32) || defined (ACE_WIN64)
+#else
+typedef Net_IConnectionManager_T<Net_Netlink_Addr,
+                                 Olimex_Mod_MPU6050_NetlinkConnectionConfiguration,
+                                 struct Olimex_Mod_MPU6050_NetlinkConnectionState,
+                                 Net_StreamStatistic_t,
+                                 //////
+                                 struct Olimex_Mod_MPU6050_NetlinkUserData> Olimex_Mod_MPU6050_INetlinkConnectionManager_t;
 #endif
 
 struct Olimex_Mod_MPU6050_StreamState;
 struct Olimex_Mod_MPU6050_StreamConfiguration;
 struct Olimex_Mod_MPU6050_ModuleHandlerConfiguration;
 struct Olimex_Mod_MPU6050_SessionData;
-typedef Stream_SessionData_T<Olimex_Mod_MPU6050_SessionData> Olimex_Mod_MPU6050_StreamSessionData_t;
+typedef Stream_SessionData_T<struct Olimex_Mod_MPU6050_SessionData> Olimex_Mod_MPU6050_StreamSessionData_t;
+extern const char stream_name_string_[];
+typedef Stream_Session_Manager_T<ACE_MT_SYNCH,
+                                 enum Stream_SessionMessageType,
+                                 struct Stream_SessionManager_Configuration,
+                                 struct Olimex_Mod_MPU6050_SessionData,
+                                 Olimex_Mod_MPU6050_RuntimeStatistic_t,
+                                 struct Olimex_Mod_MPU6050_UserData> Olimex_Mod_MPU6050_SessionManager_t;
 typedef Stream_Base_T<ACE_MT_SYNCH,
-                      ACE_MT_SYNCH,
                       Common_TimePolicy_t,
-                      Stream_ControlType,
-                      Stream_SessionMessageType,
-                      Stream_StateMachine_ControlState,
-                      Olimex_Mod_MPU6050_StreamState,
-                      Olimex_Mod_MPU6050_StreamConfiguration,
+                      stream_name_string_,
+                      enum Stream_ControlType,
+                      enum Stream_SessionMessageType,
+                      enum Stream_StateMachine_ControlState,
+                      struct Olimex_Mod_MPU6050_StreamState,
+                      struct Olimex_Mod_MPU6050_StreamConfiguration,
                       Olimex_Mod_MPU6050_RuntimeStatistic_t,
-                      Stream_ModuleConfiguration,
-                      Olimex_Mod_MPU6050_ModuleHandlerConfiguration,
-                      Olimex_Mod_MPU6050_SessionData,
-                      Olimex_Mod_MPU6050_StreamSessionData_t,
+                      struct Olimex_Mod_MPU6050_ModuleHandlerConfiguration,
+                      Olimex_Mod_MPU6050_SessionManager_t,
                       Olimex_Mod_MPU6050_ControlMessage_t,
                       Olimex_Mod_MPU6050_Message,
-                      Olimex_Mod_MPU6050_SessionMessage> Olimex_Mod_MPU6050_StreamBase_t;
+                      Olimex_Mod_MPU6050_SessionMessage,
+                      struct Olimex_Mod_MPU6050_UserData> Olimex_Mod_MPU6050_StreamBase_t;
+class Olimex_Mod_MPU6050_EventHandler;
 struct Olimex_Mod_MPU6050_ModuleHandlerConfiguration
  : Stream_ModuleHandlerConfiguration
 {
-  inline Olimex_Mod_MPU6050_ModuleHandlerConfiguration ()
+  Olimex_Mod_MPU6050_ModuleHandlerConfiguration ()
    : Stream_ModuleHandlerConfiguration ()
    , connection (NULL)
+   , connectionConfigurations (NULL)
    , connectionManager (NULL)
    , consoleMode (false)
    , inbound (true)
    , passive (false)
    , printFinalReport (true)
    , pushStatisticMessages (true)
-   , socketConfiguration (NULL)
-   , socketHandlerConfiguration (NULL)
    , stream (NULL)
-  {};
+   , subscriber (NULL)
+  {}
 
   Olimex_Mod_MPU6050_IConnection_t*               connection; // UDP source/IO module
+  Stream_Net_StreamConnectionConfigurations_t*    connectionConfigurations;
   Olimex_Mod_MPU6050_IConnectionManager_t*        connectionManager; // UDP IO module
 
   bool                                            consoleMode;
@@ -297,10 +338,8 @@ struct Olimex_Mod_MPU6050_ModuleHandlerConfiguration
   bool                                            passive;
   bool                                            printFinalReport;
   bool                                            pushStatisticMessages;
-
-  Net_SocketConfiguration*                        socketConfiguration;
-  Olimex_Mod_MPU6050_SocketHandlerConfiguration*  socketHandlerConfiguration;
   Olimex_Mod_MPU6050_StreamBase_t*                stream;
+  Olimex_Mod_MPU6050_Notification_t*              subscriber;
 };
 
 #if defined (ACE_WIN32) || defined (ACE_WIN64)
@@ -308,62 +347,62 @@ struct Olimex_Mod_MPU6050_ModuleHandlerConfiguration
 struct Olimex_Mod_MPU6050_NetlinkModuleHandlerConfiguration
  : Olimex_Mod_MPU6050_ModuleHandlerConfiguration
 {
-  inline Olimex_Mod_MPU6050_NetlinkModuleHandlerConfiguration ()
+  Olimex_Mod_MPU6050_NetlinkModuleHandlerConfiguration ()
    : Olimex_Mod_MPU6050_ModuleHandlerConfiguration ()
    , connection (NULL)
+   , connectionConfiguration (NULL)
    , connectionManager (NULL)
-   , socketHandlerConfiguration (NULL)
-  {};
+  {}
 
-  Olimex_Mod_MPU6050_INetlinkConnection_t*              connection; // Netlink source/IO module
-  Olimex_Mod_MPU6050_INetlinkConnectionManager_t*       connectionManager; // Netlink IO module
+  Olimex_Mod_MPU6050_INetlinkConnection_t*           connection; // Netlink source/IO module
+  Olimex_Mod_MPU6050_NetlinkConnectionConfiguration* connectionConfiguration;
+  Olimex_Mod_MPU6050_INetlinkConnectionManager_t*    connectionManager; // Netlink IO module
 
-  Olimex_Mod_MPU6050_NetlinkSocketHandlerConfiguration* socketHandlerConfiguration;
 };
-#endif
+#endif // ACE_WIN32 || ACE_WIN64
 
 struct Olimex_Mod_MPU6050_StreamConfiguration
  : Stream_Configuration
 {
-  inline Olimex_Mod_MPU6050_StreamConfiguration ()
+  Olimex_Mod_MPU6050_StreamConfiguration ()
    : Stream_Configuration ()
-   , moduleHandlerConfiguration (NULL)
-  {};
+   , userData (NULL)
+  {}
 
-  Olimex_Mod_MPU6050_ModuleHandlerConfiguration* moduleHandlerConfiguration;
+  struct Olimex_Mod_MPU6050_UserData* userData;
 };
 
 #if defined (ACE_WIN32) || defined (ACE_WIN64)
 #else
 struct Olimex_Mod_MPU6050_NetlinkStreamConfiguration
- : Olimex_Mod_MPU6050_StreamConfiguration
+ : Stream_Configuration
 {
-  inline Olimex_Mod_MPU6050_NetlinkStreamConfiguration ()
-   : Olimex_Mod_MPU6050_StreamConfiguration ()
-   , moduleHandlerConfiguration (NULL)
-  {};
+  Olimex_Mod_MPU6050_NetlinkStreamConfiguration ()
+   : Stream_Configuration ()
+   , userData (NULL)
+  {}
 
-  Olimex_Mod_MPU6050_NetlinkModuleHandlerConfiguration* moduleHandlerConfiguration;
+  struct Olimex_Mod_MPU6050_NetlinkUserData* userData;
 };
-#endif
+#endif // ACE_WIN32 || ACE_WIN64
 
 struct Olimex_Mod_MPU6050_Configuration
 {
-  inline Olimex_Mod_MPU6050_Configuration ()
-   : socketConfiguration ()
-   , socketHandlerConfiguration ()
+  Olimex_Mod_MPU6050_Configuration ()
+   : connectionConfiguration ()
+   , moduleConfiguration ()
+   , moduleHandlerConfiguration ()
    , streamConfiguration ()
    , userData (NULL)
-  {};
+  {}
 
-  Net_SocketConfiguration                       socketConfiguration;
-  Olimex_Mod_MPU6050_SocketHandlerConfiguration socketHandlerConfiguration;
+  Olimex_Mod_MPU6050_ConnectionConfiguration               connectionConfiguration;
 
-  Stream_ModuleConfiguration                    moduleConfiguration;
-  Olimex_Mod_MPU6050_ModuleHandlerConfiguration moduleHandlerConfiguration;
-  Olimex_Mod_MPU6050_StreamConfiguration        streamConfiguration;
+  struct Stream_ModuleConfiguration                        moduleConfiguration;
+  struct Olimex_Mod_MPU6050_ModuleHandlerConfiguration     moduleHandlerConfiguration;
+  Olimex_Mod_MPU6050_StreamConfiguration_t                 streamConfiguration;
 
-  Olimex_Mod_MPU6050_UserData*                  userData;
+  struct Olimex_Mod_MPU6050_UserData*                      userData;
 };
 
 #if defined (ACE_WIN32) || defined (ACE_WIN64)
@@ -371,78 +410,87 @@ struct Olimex_Mod_MPU6050_Configuration
 struct Olimex_Mod_MPU6050_NetlinkConfiguration
  : Olimex_Mod_MPU6050_Configuration
 {
-  inline Olimex_Mod_MPU6050_NetlinkConfiguration ()
+  Olimex_Mod_MPU6050_NetlinkConfiguration ()
    : Olimex_Mod_MPU6050_Configuration ()
-   , socketHandlerConfiguration ()
+   , connectionConfiguration ()
    , moduleHandlerConfiguration ()
    , streamConfiguration ()
    , userData (NULL)
-  {};
+  {}
 
-  Olimex_Mod_MPU6050_NetlinkSocketHandlerConfiguration socketHandlerConfiguration;
+  Olimex_Mod_MPU6050_NetlinkConnectionConfiguration           connectionConfiguration;
 
-  Olimex_Mod_MPU6050_NetlinkModuleHandlerConfiguration moduleHandlerConfiguration;
-  Olimex_Mod_MPU6050_NetlinkStreamConfiguration        streamConfiguration;
+  struct Olimex_Mod_MPU6050_NetlinkModuleHandlerConfiguration moduleHandlerConfiguration;
+  Olimex_Mod_MPU6050_NetlinkStreamConfiguration_t             streamConfiguration;
 
-  Olimex_Mod_MPU6050_NetlinkUserData*                  userData;
+  struct Olimex_Mod_MPU6050_NetlinkUserData*                  userData;
 };
-#endif
+#endif // ACE_WIN32 || ACE_WIN64
 
-struct Olimex_Mod_MPU6050_GtkCBData
- : Common_UI_GTKState
+struct Olimex_Mod_MPU6050_GTK_CBData
+ : Common_UI_GTK_CBData
 {
- inline Olimex_Mod_MPU6050_GtkCBData ()
-  : Common_UI_GTKState ()
-  , argc (0)
-  , argv (NULL)
-  , clientMode (false)
-  , contextIdData (0)
-  , contextIdInformation (0)
-  , eventQueue ()
-  , frameCounter (0)
-  , messageQueue ()
-  , openGLAxesListId (0)
-  , openGLCamera ()
-  , openGLContext (NULL)
-  , openGLDrawable (NULL)
-  , openGLRefreshId (0)
-  , openGLDoubleBuffered (OLIMEX_MOD_MPU6050_OPENGL_DOUBLE_BUFFERED)
-  , temperature ()
-  , temperatureIndex (-1)
-  , timestamp (ACE_Time_Value::zero)
-  , XML (NULL)
- {
-   resetCamera ();
- };
+  Olimex_Mod_MPU6050_GTK_CBData ()
+   : Common_UI_GTK_CBData ()
+   , clientMode (false)
+   , contextIdData (0)
+   , contextIdInformation (0)
+   , eventQueue ()
+   , frameCounter (0)
+   , messageQueue ()
+   , openGLAxesListId (0)
+   , openGLCamera ()
+   , openGLContext (NULL)
+   , openGLRefreshId (0)
+   , openGLDoubleBuffered (OLIMEX_MOD_MPU6050_OPENGL_DOUBLE_BUFFERED)
+   , temperature ()
+   , temperatureIndex (-1)
+   , timestamp (ACE_Time_Value::zero)
+  {
+    resetCamera ();
+  }
 
- inline void resetCamera ()
- {
-   ACE_OS::memset (&openGLCamera, 0, sizeof (openGLCamera));
-   openGLCamera.zoom = OLIMEX_MOD_MPU6050_OPENGL_CAMERA_DEFAULT_ZOOM;
- };
+  void resetCamera ()
+  {
+    ACE_OS::memset (&openGLCamera, 0, sizeof (openGLCamera));
+    openGLCamera.zoom = OLIMEX_MOD_MPU6050_OPENGL_CAMERA_DEFAULT_ZOOM;
+  }
 
- int                           argc;
- ACE_TCHAR**                   argv;
- bool                          clientMode;
- // *NOTE*: on the host ("server"), use the device bias registers instead !
- // *TODO*: implement a client->server protocol to do this
- SensorBias                    clientSensorBias; // client side ONLY (!)
- guint                         contextIdData; // status bar context
- guint                         contextIdInformation; // status bar context
- Olimex_Mod_MPU6050_Events_t   eventQueue;
- unsigned int                  frameCounter;
- Olimex_Mod_MPU6050_Messages_t messageQueue;
- GLuint                        openGLAxesListId;
- Camera                        openGLCamera;
- GdkGLContext*                 openGLContext;
- GdkGLDrawable*                openGLDrawable;
- guint                         openGLRefreshId;
- bool                          openGLDoubleBuffered;
- gfloat                        temperature[OLIMEX_MOD_MPU6050_TEMPERATURE_BUFFER_SIZE * 2];
- int                           temperatureIndex;
- ACE_Time_Value                timestamp;
-
- GladeXML*                     XML;
+  bool                          clientMode;
+  // *NOTE*: on the host ("server"), use the device bias registers instead !
+  // *TODO*: implement a client->server protocol to do this
+  struct SensorBias             clientSensorBias; // client side ONLY (!)
+  guint                         contextIdData; // status bar context
+  guint                         contextIdInformation; // status bar context
+  Olimex_Mod_MPU6050_Events_t   eventQueue;
+  unsigned int                  frameCounter;
+  Olimex_Mod_MPU6050_Messages_t messageQueue;
+  GLuint                        openGLAxesListId;
+  Camera                        openGLCamera;
+#if GTK_CHECK_VERSION (3,0,0)
+#if GTK_CHECK_VERSION (3,24,1)
+  GdkGLContext*                 openGLContext;
+#elif GTK_CHECK_VERSION (3,16,0)
+  GdkGLContext*                 openGLContext;
+#else
+#if defined (GTKGLAREA_SUPPORT)
+  GglaContext*                  openGLContext;
+#else
+  gpointer                      openGLContext;
+#endif /* GTKGLAREA_SUPPORT */
+#endif /* GTK_CHECK_VERSION (3,24,1) */
+#elif GTK_CHECK_VERSION (2,0,0)
+#if defined (GTKGLAREA_SUPPORT)
+  GdkGLContext*                 openGLContext;
+#else
+  gpointer                      openGLContext;
+#endif /* GTKGLAREA_SUPPORT */
+#endif /* GTK_CHECK_VERSION (3,0,0) */
+  guint                         openGLRefreshId;
+  bool                          openGLDoubleBuffered;
+  gfloat                        temperature[OLIMEX_MOD_MPU6050_TEMPERATURE_BUFFER_SIZE * 2];
+  int                           temperatureIndex;
+  ACE_Time_Value                timestamp;
 };
 
 #endif // #ifndef OLIMEX_MOD_MPU6050_TYPES_H
