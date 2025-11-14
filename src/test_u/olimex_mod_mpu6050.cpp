@@ -34,6 +34,11 @@
 #include "gettext.h"
 #endif // ACE_WIN32 || ACE_WIN64
 
+#if defined (GLEW_SUPPORT)
+#include "GL/glew.h"
+#endif // GLEW_SUPPORT
+#include "GL/glut.h"
+
 #include "ace/ACE.h"
 #include "ace/Get_Opt.h"
 #if defined (ACE_WIN32) || defined (ACE_WIN64)
@@ -61,6 +66,7 @@
 #include "common_log_tools.h"
 
 #include "common_ui_defines.h"
+#include "common_ui_tools.h"
 // #include "common_ui_glade_definition.h"
 #include "common_ui_gtk_manager_common.h"
 #include "common_ui_gtk_builder_definition.h"
@@ -72,9 +78,9 @@
 #include "net_client_connector.h"
 #include "net_client_asynchconnector.h"
 
-#include "olimex_mod_mpu6050_callbacks.h"
 #include "olimex_mod_mpu6050_defines.h"
 #include "olimex_mod_mpu6050_eventhandler.h"
+#include "olimex_mod_mpu6050_gtk_callbacks.h"
 #include "olimex_mod_mpu6050_macros.h"
 #include "olimex_mod_mpu6050_network.h"
 #include "olimex_mod_mpu6050_signalhandler.h"
@@ -179,7 +185,7 @@ do_printUsage (const std::string& programName_in)
   std::string UI_file = path;
   UI_file += ACE_DIRECTORY_SEPARATOR_CHAR_A;
   UI_file += ACE_TEXT_ALWAYS_CHAR (OLIMEX_MOD_MPU6050_UI_DEFINITION_FILE_NAME);
-  std::cout << ACE_TEXT ("-u[[STRING]] : (libglade) interface definition file [\"")
+  std::cout << ACE_TEXT ("-u[[STRING]] : interface definition file [\"")
             << UI_file
             << ACE_TEXT_ALWAYS_CHAR ("\"] {\"\" --> no GUI}")
             << std::endl;
@@ -473,7 +479,8 @@ do_work (int argc_in,
          ////////////////////////////////
          const ACE_Sig_Set& signalSet_in,
          const ACE_Sig_Set& ignoredSignalSet_in,
-         Common_SignalActions_t& previousSignalActions_inout)
+         Common_SignalActions_t& previousSignalActions_inout,
+         Olimex_Mod_MPU6050_SignalHandler& signalHandler_in)
 {
   OLIMEX_MOD_MPU6050_TRACE (ACE_TEXT ("::do_work"));
 
@@ -485,6 +492,7 @@ do_work (int argc_in,
 #else
   struct Olimex_Mod_MPU6050_NetlinkConfiguration netlink_configuration;
 #endif
+
   struct Olimex_Mod_MPU6050_UserData user_data;
   user_data.configuration = &configuration;
 #if defined (ACE_WIN32) || defined (ACE_WIN64)
@@ -552,6 +560,8 @@ do_work (int argc_in,
   configuration.connectionConfiguration.useThreadPerConnection = false;
 
   // ******************** stream configuration data ***************************
+  configuration.moduleHandlerConfiguration.concurrency =
+    STREAM_HEADMODULECONCURRENCY_ACTIVE;
   configuration.moduleHandlerConfiguration.connectionManager =
     connectionManager_p;
   configuration.moduleHandlerConfiguration.consoleMode =
@@ -559,6 +569,7 @@ do_work (int argc_in,
   Stream_Net_StreamConnectionConfigurations_t connection_configurations_a;
   configuration.moduleHandlerConfiguration.connectionConfigurations =
     &connection_configurations_a;
+  //configuration.moduleHandlerConfiguration.stopOnUnlink = true;
   configuration.moduleHandlerConfiguration.stream = &stream;
   if (!useReactor_in)
     configuration.moduleHandlerConfiguration.stream = &asynch_stream;
@@ -594,6 +605,11 @@ do_work (int argc_in,
     &configuration_2.streamConfiguration;
   configuration_2.moduleHandlerConfiguration =
     configuration.moduleHandlerConfiguration;
+  configuration_2.moduleHandlerConfiguration.concurrency =
+    STREAM_HEADMODULECONCURRENCY_CONCURRENT;
+  configuration_2.moduleHandlerConfiguration.connectionConfigurations = NULL;
+  configuration_2.moduleHandlerConfiguration.stream = NULL;
+  configuration_2.moduleHandlerConfiguration.subscriber = NULL;
   struct Olimex_Mod_MPU6050_StreamConfiguration stream_configuration_2 =
     stream_configuration_s;
   stream_configuration_2.module = NULL;
@@ -643,9 +659,10 @@ do_work (int argc_in,
   struct Olimex_Mod_MPU6050_SignalHandlerConfiguration signalhandler_configuration;
   signalhandler_configuration.consoleMode = interfaceDefinitionFile_in.empty ();
   signalhandler_configuration.peerAddress = peerAddress_in;
+  signalhandler_configuration.stream =
+    configuration.moduleHandlerConfiguration.stream;
   signalhandler_configuration.useReactor = useReactor_in;
-  Olimex_Mod_MPU6050_SignalHandler signal_handler;
-  if (!signal_handler.initialize (signalhandler_configuration))
+  if (!signalHandler_in.initialize (signalhandler_configuration))
   {
     ACE_DEBUG ((LM_ERROR,
                 ACE_TEXT ("failed to initialize signal handler, returning\n")));
@@ -654,7 +671,7 @@ do_work (int argc_in,
   if (!Common_Signal_Tools::initialize (useReactor_in ? COMMON_SIGNAL_DISPATCH_REACTOR : COMMON_SIGNAL_DISPATCH_PROACTOR,
                                         signalSet_in,
                                         ignoredSignalSet_in,
-                                        &signal_handler,
+                                        &signalHandler_in,
                                         previousSignalActions_inout))
   {
     ACE_DEBUG ((LM_ERROR,
@@ -816,7 +833,9 @@ do_work (int argc_in,
   Common_Event_Tools::dispatchEvents (dispatch_state_s);
 
   // step9: clean up
-  configuration.moduleHandlerConfiguration.stream->stop (true);
+  configuration.moduleHandlerConfiguration.stream->stop (true,
+                                                         true,
+                                                         false);
 //  connectionManager_p->stop ();
 //  connectionManager_p->abort ();
 //  connectionManager_p->wait ();
@@ -847,6 +866,9 @@ ACE_TMAIN (int argc_in,
 
   int result = -1;
 
+  // step0: initialize GLUT
+  glutInit (&argc_in, argv_in);
+
   // step0: initialize ACE
   // *PORTABILITY*: on Windows, ACE needs initialization...
 #if defined (ACE_WIN32) || defined (ACE_WIN64)
@@ -859,11 +881,22 @@ ACE_TMAIN (int argc_in,
   } // end IF
 #endif
 
-#if defined (OLINUXINO_ENABLE_VALGRIND_SUPPORT)
+#if defined (VALGRIND_SUPPORT)
   if (RUNNING_ON_VALGRIND)
     ACE_DEBUG ((LM_INFO,
                 ACE_TEXT ("running on valgrind...\n")));
 #endif
+
+#if defined (ACE_WIN32) || defined (ACE_WIN64)
+  Common_Tools::initialize (false,  // COM ?
+                            false); // RNG ?
+#else
+  Common_Tools::initialize (false); // RNG ?
+#endif // ACE_WIN32 || ACE_WIN64
+  Common_File_Tools::initialize (ACE_TEXT_ALWAYS_CHAR (argv_in[0]));
+  Common_UI_Tools::initialize ();
+  Common_UI_GTK_Tools::initialize (argc_in,
+                                   argv_in);
 
   // *PROCESS PROFILE*
   ACE_Profile_Timer process_profile;
@@ -1046,6 +1079,7 @@ ACE_TMAIN (int argc_in,
 
     return EXIT_FAILURE;
   } // end IF
+  Olimex_Mod_MPU6050_SignalHandler signal_handler;
 
   // step4: initialize NLS
 #ifdef ENABLE_NLS
@@ -1061,8 +1095,10 @@ ACE_TMAIN (int argc_in,
   struct Olimex_Mod_MPU6050_GTK_CBData gtk_cb_data;
   gtk_cb_data.clientMode = client_mode;
   ACE_OS::memset (&gtk_cb_data.clientSensorBias, 0, sizeof (struct SensorBias));
-  gtk_cb_data.openGLDoubleBuffered =
+#if defined (GTKGL_SUPPORT)
+  gtk_cb_data.OpenGLDoubleBuffered =
     OLIMEX_MOD_MPU6050_OPENGL_DOUBLE_BUFFERED;
+#endif // GTKGL_SUPPORT
   ACE_OS::memset (gtk_cb_data.temperature, 0, sizeof (gfloat[OLIMEX_MOD_MPU6050_TEMPERATURE_BUFFER_SIZE * 2]));
 
   Common_UI_GTK_State_t& state_r =
@@ -1074,7 +1110,6 @@ ACE_TMAIN (int argc_in,
   gtk_cb_data.UIState = &state_r;
 
   Common_UI_GtkBuilderDefinition_t ui_definition;
-  ui_definition.initialize (state_r);
   Common_UI_GTK_Configuration_t gtk_configuration;
   gtk_configuration.argc = argc_in;
   gtk_configuration.argv = argv_in;
@@ -1105,7 +1140,8 @@ ACE_TMAIN (int argc_in,
              ////////////////////////////
              signal_set,
              ignored_signal_set,
-             previous_signal_actions);
+             previous_signal_actions,
+             signal_handler);
 
   // debug info
   timer.stop ();

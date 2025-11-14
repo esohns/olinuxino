@@ -42,10 +42,10 @@ Olimex_Mod_MPU6050_SignalHandler::~Olimex_Mod_MPU6050_SignalHandler ()
 
 }
 
-bool
-Olimex_Mod_MPU6050_SignalHandler::handleSignal (int signal_in)
+void
+Olimex_Mod_MPU6050_SignalHandler::handle (const struct Common_Signal& signal_in)
 {
-  OLIMEX_MOD_MPU6050_TRACE (ACE_TEXT ("Olimex_Mod_MPU6050_SignalHandler::handleSignal"));
+  OLIMEX_MOD_MPU6050_TRACE (ACE_TEXT ("Olimex_Mod_MPU6050_SignalHandler::handle"));
 
   // sanity check(s)
   ACE_ASSERT (inherited::configuration_);
@@ -53,7 +53,7 @@ Olimex_Mod_MPU6050_SignalHandler::handleSignal (int signal_in)
   bool stop_event_dispatching = false;
   bool connect = false;
 //  bool abort = false;
-  switch (signal_in)
+  switch (signal_in.signal)
   {
     case SIGINT:
 // *PORTABILITY*: on Windows SIGQUIT is not defined
@@ -96,9 +96,9 @@ Olimex_Mod_MPU6050_SignalHandler::handleSignal (int signal_in)
     default:
     {
       ACE_DEBUG ((LM_ERROR,
-                  ACE_TEXT ("received invalid/unknown signal: \"%S\", aborting\n"),
+                  ACE_TEXT ("received invalid/unknown signal: \"%S\", returning\n"),
                   signal_in));
-      return false;
+      return;
     }
   } // end SWITCH
 
@@ -117,9 +117,9 @@ Olimex_Mod_MPU6050_SignalHandler::handleSignal (int signal_in)
       inherited::configuration_->interfaceHandle->connect (inherited::configuration_->peerAddress);
     } catch (...) {
       ACE_DEBUG ((LM_ERROR,
-                  ACE_TEXT ("caught exception in Olimex_Mod_MPU6050_IConnector_t::connect(), aborting\n")));
+                  ACE_TEXT ("caught exception in Olimex_Mod_MPU6050_IConnector_t::connect(), returning\n")));
 
-      return false;
+      return;
     }
   } // end IF
 
@@ -139,10 +139,15 @@ Olimex_Mod_MPU6050_SignalHandler::handleSignal (int signal_in)
         iasynch_connector_p->abort ();
       } catch (...) {
         ACE_DEBUG ((LM_ERROR,
-                    ACE_TEXT ("caught exception in Olimex_Mod_MPU6050_IAsynchConnector_t::abort(), aborting\n")));
-        return false;
+                    ACE_TEXT ("caught exception in Olimex_Mod_MPU6050_IAsynchConnector_t::abort(), returning\n")));
+        return;
       }
     } // end IF
+
+    if (inherited::configuration_->stream)
+      inherited::configuration_->stream->stop (true,   // wait ?
+                                               false,  // recurse upstream ?
+                                               false); // high priority ?
 
     // step2: stop GTK event dispatch ?
     if (!inherited::configuration_->consoleMode)
@@ -154,6 +159,4 @@ Olimex_Mod_MPU6050_SignalHandler::handleSignal (int signal_in)
                                                false,                                     // wait for completion ?
                                                false);                                    // close singletons ?
   } // end IF
-
-  return true;
 }

@@ -36,7 +36,7 @@ class Olimex_Mod_MPU6050_SignalHandler
   virtual ~Olimex_Mod_MPU6050_SignalHandler ();
 
   // implement Common_ISignal
-  virtual bool handleSignal (int); // signal
+  virtual void handle (const struct Common_Signal&); // signal
 
  private:
   typedef Common_SignalHandler_T<struct Olimex_Mod_MPU6050_SignalHandlerConfiguration> inherited;

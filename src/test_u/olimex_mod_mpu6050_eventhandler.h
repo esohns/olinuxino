@@ -29,7 +29,7 @@
 
 #include "olimex_mod_mpu6050_message.h"
 #include "olimex_mod_mpu6050_sessionmessage.h"
-//#include "olimex_mod_mpu6050_types.h"
+#include "olimex_mod_mpu6050_types.h"
 
 // forward declarations
 struct Olimex_Mod_MPU6050_GTK_CBData;

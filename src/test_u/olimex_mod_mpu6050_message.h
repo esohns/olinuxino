@@ -26,17 +26,29 @@
 #include "ace/Global_Macros.h"
 
 #include "stream_common.h"
+#include "stream_control_message.h"
 #include "stream_message_base.h"
 #include "stream_messageallocatorheap_base.h"
 
 //#include "olimex_mod_mpu6050_sessionmessage.h"
-#include "olimex_mod_mpu6050_types.h"
+//#include "olimex_mod_mpu6050_types.h"
 
 // forward declaration(s)
 class ACE_Allocator;
 class ACE_Data_Block;
 class ACE_Message_Block;
 class Olimex_Mod_MPU6050_SessionMessage;
+
+enum Olimex_Mod_MPU6050_MessageType
+{
+  OLIMEX_MOD_MPU6050_MESSAGE_INVALID = -1,
+  OLIMEX_MOD_MPU6050_MESSAGE_SENSOR_DATA,
+  ///////////////////////////////////////
+  OLIMEX_MOD_MPU6050_MESSAGE_MAX
+};
+
+typedef Stream_ControlMessage_T<enum Stream_ControlType,
+                                enum Stream_ControlMessageType> Olimex_Mod_MPU6050_ControlMessage_t;
 
 class Olimex_Mod_MPU6050_Message
  : public Stream_MessageBase_T<Stream_DataBase_T<enum Olimex_Mod_MPU6050_MessageType>,

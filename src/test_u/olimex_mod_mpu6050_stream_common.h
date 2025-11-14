@@ -25,11 +25,11 @@
 
 #include "stream_net_common.h"
 
-#include "olimex_mod_mpu6050_types.h"
+//#include "olimex_mod_mpu6050_types.h"
 
 // forward declarations
-class Olimex_Mod_MPU6050_Message;
-class Olimex_Mod_MPU6050_SessionMessage;
+//class Olimex_Mod_MPU6050_Message;
+//class Olimex_Mod_MPU6050_SessionMessage;
 
 //typedef Stream_MessageAllocatorHeapBase_T<Stream_AllocatorConfiguration,
 //                                          Olimex_Mod_MPU6050_ControlMessage_t,
@@ -51,10 +51,10 @@ struct Olimex_Mod_MPU6050_StreamState
 };
 
 struct Olimex_Mod_MPU6050_ConnectionState;
-typedef Stream_Statistic Olimex_Mod_MPU6050_RuntimeStatistic_t;
 typedef Net_IConnection_T<ACE_INET_Addr,
                           struct Olimex_Mod_MPU6050_ConnectionState,
                           Net_StreamStatistic_t> Olimex_Mod_MPU6050_IConnection_t;
+typedef Stream_Statistic Olimex_Mod_MPU6050_RuntimeStatistic_t;
 struct Olimex_Mod_MPU6050_SessionData
  : Stream_SessionData
 {

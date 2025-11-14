@@ -29,12 +29,16 @@
 
 #include "olimex_mod_mpu6050_message.h"
 #include "olimex_mod_mpu6050_stream_common.h"
-#include "olimex_mod_mpu6050_types.h"
+//#include "olimex_mod_mpu6050_types.h"
 
 // forward declarations
 class ACE_Allocator;
 class ACE_Data_Block;
 class ACE_Message_Block;
+struct Olimex_Mod_MPU6050_UserData;
+
+typedef Stream_ControlMessage_T<enum Stream_ControlType,
+                                enum Stream_ControlMessageType> Olimex_Mod_MPU6050_ControlMessage_t;
 
 class Olimex_Mod_MPU6050_SessionMessage
  : public Stream_SessionMessageBase_T<enum Stream_SessionMessageType,

@@ -21,6 +21,9 @@
 #include <deque>
 #include <list>
 
+#if defined (GLEW_SUPPORT)
+#include "GL/glew.h"
+#endif // GLEW_SUPPORT
 #include "GL/gl.h"
 #include "glm/glm.hpp"
 
@@ -48,8 +51,9 @@
 #else
 #include "gdk/gdkgl.h"
 #endif /* GTK_CHECK_VERSION (x,0,0) */
-
 // #include "glade/glade.h"
+
+#include "common_gl_shader.h"
 
 #include "common_time_common.h"
 
@@ -74,20 +78,12 @@
 
 #include "olimex_mod_mpu6050_defines.h"
 #include "olimex_mod_mpu6050_stream_common.h"
+#include "olimex_mod_mpu6050_sessionmessage.h"
 
 // forward declarations
 class Olimex_Mod_MPU6050_Message;
-class Olimex_Mod_MPU6050_SessionMessage;
 class Stream_IAllocator;
 struct Olimex_Mod_MPU6050_SessionData;
-
-enum Olimex_Mod_MPU6050_MessageType
-{
-  OLIMEX_MOD_MPU6050_MESSAGE_INVALID = -1,
-  OLIMEX_MOD_MPU6050_MESSAGE_SENSOR_DATA,
-  ///////////////////////////////////////
-  OLIMEX_MOD_MPU6050_MESSAGE_MAX
-};
 
 enum Olimex_Mod_MPU6050_Event
 {
@@ -229,6 +225,33 @@ typedef Net_IConnector_T<ACE_INET_Addr,
                          Olimex_Mod_MPU6050_ConnectionConfiguration> Olimex_Mod_MPU6050_IConnector_t;
 typedef Net_IAsynchConnector_T<ACE_INET_Addr,
                                Olimex_Mod_MPU6050_ConnectionConfiguration> Olimex_Mod_MPU6050_IAsynchConnector_t;
+struct Olimex_Mod_MPU6050_StreamState;
+struct Olimex_Mod_MPU6050_StreamConfiguration;
+struct Olimex_Mod_MPU6050_ModuleHandlerConfiguration;
+struct Olimex_Mod_MPU6050_SessionData;
+typedef Stream_SessionData_T<struct Olimex_Mod_MPU6050_SessionData> Olimex_Mod_MPU6050_StreamSessionData_t;
+extern const char stream_name_string_[];
+typedef Stream_Session_Manager_T<ACE_MT_SYNCH,
+                                 enum Stream_SessionMessageType,
+                                 struct Stream_SessionManager_Configuration,
+                                 struct Olimex_Mod_MPU6050_SessionData,
+                                 Olimex_Mod_MPU6050_RuntimeStatistic_t,
+                                 struct Olimex_Mod_MPU6050_UserData> Olimex_Mod_MPU6050_SessionManager_t;
+typedef Stream_Base_T<ACE_MT_SYNCH,
+                      Common_TimePolicy_t,
+                      stream_name_string_,
+                      enum Stream_ControlType,
+                      enum Stream_SessionMessageType,
+                      enum Stream_StateMachine_ControlState,
+                      struct Olimex_Mod_MPU6050_StreamState,
+                      struct Olimex_Mod_MPU6050_StreamConfiguration,
+                      Olimex_Mod_MPU6050_RuntimeStatistic_t,
+                      struct Olimex_Mod_MPU6050_ModuleHandlerConfiguration,
+                      Olimex_Mod_MPU6050_SessionManager_t,
+                      Olimex_Mod_MPU6050_ControlMessage_t,
+                      Olimex_Mod_MPU6050_Message,
+                      Olimex_Mod_MPU6050_SessionMessage,
+                      struct Olimex_Mod_MPU6050_UserData> Olimex_Mod_MPU6050_StreamBase_t;
 struct Olimex_Mod_MPU6050_SignalHandlerConfiguration
  : Common_SignalHandlerConfiguration
 {
@@ -238,6 +261,7 @@ struct Olimex_Mod_MPU6050_SignalHandlerConfiguration
    , consoleMode (false)
    , interfaceHandle (NULL)
    , peerAddress ()
+   , stream (NULL)
    , useReactor (false)
   {}
 
@@ -245,6 +269,7 @@ struct Olimex_Mod_MPU6050_SignalHandlerConfiguration
   bool                             consoleMode;
   Olimex_Mod_MPU6050_IConnector_t* interfaceHandle;
   ACE_INET_Addr                    peerAddress;
+  Olimex_Mod_MPU6050_StreamBase_t* stream;
   bool                             useReactor;
 };
 
@@ -284,33 +309,6 @@ typedef Net_IConnectionManager_T<Net_Netlink_Addr,
                                  struct Olimex_Mod_MPU6050_NetlinkUserData> Olimex_Mod_MPU6050_INetlinkConnectionManager_t;
 #endif
 
-struct Olimex_Mod_MPU6050_StreamState;
-struct Olimex_Mod_MPU6050_StreamConfiguration;
-struct Olimex_Mod_MPU6050_ModuleHandlerConfiguration;
-struct Olimex_Mod_MPU6050_SessionData;
-typedef Stream_SessionData_T<struct Olimex_Mod_MPU6050_SessionData> Olimex_Mod_MPU6050_StreamSessionData_t;
-extern const char stream_name_string_[];
-typedef Stream_Session_Manager_T<ACE_MT_SYNCH,
-                                 enum Stream_SessionMessageType,
-                                 struct Stream_SessionManager_Configuration,
-                                 struct Olimex_Mod_MPU6050_SessionData,
-                                 Olimex_Mod_MPU6050_RuntimeStatistic_t,
-                                 struct Olimex_Mod_MPU6050_UserData> Olimex_Mod_MPU6050_SessionManager_t;
-typedef Stream_Base_T<ACE_MT_SYNCH,
-                      Common_TimePolicy_t,
-                      stream_name_string_,
-                      enum Stream_ControlType,
-                      enum Stream_SessionMessageType,
-                      enum Stream_StateMachine_ControlState,
-                      struct Olimex_Mod_MPU6050_StreamState,
-                      struct Olimex_Mod_MPU6050_StreamConfiguration,
-                      Olimex_Mod_MPU6050_RuntimeStatistic_t,
-                      struct Olimex_Mod_MPU6050_ModuleHandlerConfiguration,
-                      Olimex_Mod_MPU6050_SessionManager_t,
-                      Olimex_Mod_MPU6050_ControlMessage_t,
-                      Olimex_Mod_MPU6050_Message,
-                      Olimex_Mod_MPU6050_SessionMessage,
-                      struct Olimex_Mod_MPU6050_UserData> Olimex_Mod_MPU6050_StreamBase_t;
 class Olimex_Mod_MPU6050_EventHandler;
 struct Olimex_Mod_MPU6050_ModuleHandlerConfiguration
  : Stream_ModuleHandlerConfiguration
@@ -438,11 +436,21 @@ struct Olimex_Mod_MPU6050_GTK_CBData
    , eventQueue ()
    , frameCounter (0)
    , messageQueue ()
+#if defined (GTKGL_SUPPORT)
+   , OpenGLCamera ()
+   , OpenGLContext (NULL)
+#if GTK_CHECK_VERSION (3,0,0)
+#elif GTK_CHECK_VERSION (2,0,0)
    , openGLAxesListId (0)
-   , openGLCamera ()
-   , openGLContext (NULL)
-   , openGLRefreshId (0)
-   , openGLDoubleBuffered (OLIMEX_MOD_MPU6050_OPENGL_DOUBLE_BUFFERED)
+#endif // GTK_CHECK_VERSION (x,0,0)
+   , OpenGLTextureId (0)
+   , VAO (0)
+   , VBO (0)
+   , EBO (0)
+   , shader ()
+   , OpenGLRefreshId (0)
+   , OpenGLDoubleBuffered (OLIMEX_MOD_MPU6050_OPENGL_DOUBLE_BUFFERED)
+#endif // GTKGL_SUPPORT
    , temperature ()
    , temperatureIndex (-1)
    , timestamp (ACE_Time_Value::zero)
@@ -450,11 +458,13 @@ struct Olimex_Mod_MPU6050_GTK_CBData
     resetCamera ();
   }
 
+#if defined (GTKGL_SUPPORT)
   void resetCamera ()
   {
-    ACE_OS::memset (&openGLCamera, 0, sizeof (openGLCamera));
-    openGLCamera.zoom = OLIMEX_MOD_MPU6050_OPENGL_CAMERA_DEFAULT_ZOOM;
+    ACE_OS::memset (&OpenGLCamera, 0, sizeof (struct Camera));
+    OpenGLCamera.zoom = OLIMEX_MOD_MPU6050_OPENGL_CAMERA_DEFAULT_ZOOM;
   }
+#endif /* GTKGL_SUPPORT */
 
   bool                          clientMode;
   // *NOTE*: on the host ("server"), use the device bias registers instead !
@@ -465,29 +475,36 @@ struct Olimex_Mod_MPU6050_GTK_CBData
   Olimex_Mod_MPU6050_Events_t   eventQueue;
   unsigned int                  frameCounter;
   Olimex_Mod_MPU6050_Messages_t messageQueue;
-  GLuint                        openGLAxesListId;
-  Camera                        openGLCamera;
+#if defined (GTKGL_SUPPORT)
+  struct Camera                 OpenGLCamera;
 #if GTK_CHECK_VERSION (3,0,0)
 #if GTK_CHECK_VERSION (3,24,1)
-  GdkGLContext*                 openGLContext;
+  GdkGLContext*                 OpenGLContext;
 #elif GTK_CHECK_VERSION (3,16,0)
-  GdkGLContext*                 openGLContext;
+  GdkGLContext*                 OpenGLContext;
 #else
 #if defined (GTKGLAREA_SUPPORT)
-  GglaContext*                  openGLContext;
+  GglaContext*                  OpenGLContext;
 #else
-  gpointer                      openGLContext;
+  gpointer                      OpenGLContext;
 #endif /* GTKGLAREA_SUPPORT */
 #endif /* GTK_CHECK_VERSION (3,24,1) */
 #elif GTK_CHECK_VERSION (2,0,0)
+  GLuint                        OpenGLAxesListId;
 #if defined (GTKGLAREA_SUPPORT)
-  GdkGLContext*                 openGLContext;
+  GdkGLContext*                 OpenGLContext;
 #else
-  gpointer                      openGLContext;
+  gpointer                      OpenGLContext;
 #endif /* GTKGLAREA_SUPPORT */
 #endif /* GTK_CHECK_VERSION (3,0,0) */
-  guint                         openGLRefreshId;
-  bool                          openGLDoubleBuffered;
+  GLuint                        OpenGLTextureId;
+  GLuint                        VAO;
+  GLuint                        VBO;
+  GLuint                        EBO;
+  Common_GL_Shader              shader;
+  guint                         OpenGLRefreshId;
+  bool                          OpenGLDoubleBuffered;
+#endif /* GTKGL_SUPPORT */
   gfloat                        temperature[OLIMEX_MOD_MPU6050_TEMPERATURE_BUFFER_SIZE * 2];
   int                           temperatureIndex;
   ACE_Time_Value                timestamp;

@@ -50,9 +50,9 @@ endforeach ()
 
 # Export the package for use from the build-tree
 # (this registers the build-tree with a global CMake-registry)
-export (PACKAGE lib${PROJECT_NAME})
+export (PACKAGE ${PROJECT_NAME})
 
-# Create the libACEStreamConfig.cmake and libACEStreamConfigVersion.cmake files
+# Create the olinuxinoConfig.cmake and olinuxinoConfigVersion.cmake files
 file (RELATIVE_PATH REL_INCLUDE_DIR "${INSTALL_CMAKE_DIR}" "${INSTALL_INCLUDE_DIR}")
 # ... for the build tree
 set (CONF_INCLUDE_DIRS "${PROJECT_SOURCE_DIR}" "${PROJECT_BINARY_DIR}")
@@ -63,7 +63,7 @@ configure_file (${PROJECT_NAME}Config.cmake.in "${PROJECT_BINARY_DIR}${CMAKE_FIL
 # ... for both
 configure_file (${PROJECT_NAME}ConfigVersion.cmake.in "${PROJECT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake" @ONLY)
 
-# Install the libACEStreamConfig.cmake and libACEStreamConfigVersion.cmake
+# Install the olinuxinoConfig.cmake and olinuxinoConfigVersion.cmake
 install (FILES
          "${PROJECT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/${PROJECT_NAME}Config.cmake"
          "${PROJECT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"
@@ -104,11 +104,9 @@ endif ()
 option (TRACING
         "enable tracing" OFF)
 if (TRACING)
- add_definitions (-DACESTREAM_NTRACE=0)
-#  set_property (SOURCE PROPERTY COMPILE_DEFINITIONS ACESTREAM_NTRACE=0)
+ add_definitions (-DOLINUXINO_NTRACE=0)
 else ()
- add_definitions (-DACESTREAM_NTRACE=1)
-#  set_property (SOURCE PROPERTY COMPILE_DEFINITIONS ACESTREAM_NTRACE=1)
+ add_definitions (-DOLINUXINO_NTRACE=1)
 endif ()
 
 option (VALGRIND_SUPPORT
@@ -120,8 +118,7 @@ if (VALGRIND_SUPPORT)
 #  check_library_exists (libvalgrind "" "" HAVE_LIB_VALGRIND)
  include (FindPkgConfig)
  pkg_check_modules (PKGVALGRIND REQUIRED libvalgrind)
- add_definitions (-DLIBACESTREAM_ENABLE_VALGRIND_SUPPORT)
-#  set_property (SOURCE PROPERTY COMPILE_DEFINITIONS LIBACESTREAM_ENABLE_VALGRIND_SUPPORT)
+ add_definitions (-DVALGRIND_SUPPORT)
 endif ()
 
 if (CMAKE_COMPILER_IS_GNUCXX)
@@ -145,6 +142,20 @@ set (CPACK_RESOURCE_FILE_LICENSE ${CMAKE_CURRENT_SOURCE_DIR}/LICENSE)
 set (CPACK_RESOURCE_FILE_README ${CMAKE_CURRENT_SOURCE_DIR}/README)
 
 include (CPack)
+
+if (DEFINED ENV{LIB_ROOT})
+ file (TO_CMAKE_PATH "$ENV{LIB_ROOT}/cmake-modules" CMAKE_MODULES_PATH)
+else ()
+  set (CMAKE_MODULES_PATH "modules/cmake-modules")
+endif (DEFINED ENV{LIB_ROOT})
+list (APPEND CMAKE_MODULE_PATH "${CMAKE_MODULES_PATH}")
+#include (UseBackportedModules)
+#cmake_policy (SET CMP0026 OLD)
+#cmake_policy (SET CMP0053 OLD)
+include (CreateLaunchers)
+
+set (CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH};${CMAKE_CURRENT_SOURCE_DIR}/../Common/scripts")
+include (libraries_init)
 
 add_subdirectory (src)
 

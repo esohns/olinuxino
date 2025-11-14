@@ -118,7 +118,7 @@ axes ()
   OLIMEX_MOD_MPU6050_TRACE (ACE_TEXT ("::axes"));
 
   GLuint axes_list = glGenLists (1);
-  ACE_ASSERT (axes_list);
+  //ACE_ASSERT (axes_list);
 
   glNewList (axes_list, GL_COMPILE);
 

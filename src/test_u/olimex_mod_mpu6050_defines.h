@@ -45,8 +45,13 @@
 #define OLIMEX_MOD_MPU6050_OPENGL_ORTHO_ZNEAR                        -1.0
 #define OLIMEX_MOD_MPU6050_OPENGL_ORTHO_ZFAR                         1.0
 
+#define OLIMEX_MOD_MPU6050_OPENGL_DEFAULT_TEXTURE_FILE               "image.png"
+#define OLIMEX_MOD_MPU6050_OPENGL_DEFAULT_FS_FILE                    "fragment_shader.glsl"
+#define OLIMEX_MOD_MPU6050_OPENGL_DEFAULT_VS_FILE                    "vertex_shader.glsl"
+
 // *** glade UI-related ***
-#define OLIMEX_MOD_MPU6050_UI_DEFINITION_FILE_NAME                   "olimex_mod_mpu6050.glade"
+//#define OLIMEX_MOD_MPU6050_UI_DEFINITION_FILE_NAME                   "olimex_mod_mpu6050.glade"
+#define OLIMEX_MOD_MPU6050_UI_DEFINITION_FILE_NAME                   "olimex_mod_mpu6050.gtk2"
 #define OLIMEX_MOD_MPU6050_DEFAULT_UI_WIDGET_WINDOW_MAIN_SIZE_WIDTH  640
 #define OLIMEX_MOD_MPU6050_DEFAULT_UI_WIDGET_WINDOW_MAIN_SIZE_HEIGHT 480
 #define OLIMEX_MOD_MPU6050_UI_INITIALIZATION_DELAY                   100 // ms
@@ -61,6 +66,7 @@
 #define OLIMEX_MOD_MPU6050_UI_WIDGET_NAME_MENU_VIEW_CALIBRATE        "calibrate"
 #define OLIMEX_MOD_MPU6050_UI_WIDGET_NAME_STATUS_BAR                 "status_bar"
 #define OLIMEX_MOD_MPU6050_UI_WIDGET_NAME_WINDOW_MAIN                "main_window"
+#define OLIMEX_MOD_MPU6050_UI_WIDGET_NAME_OPENGL_PARENT              "vbox1"
 #define OLIMEX_MOD_MPU6050_UI_WIDGET_STATUS_BAR_CONTEXT_DATA         "data"
 #define OLIMEX_MOD_MPU6050_UI_WIDGET_STATUS_BAR_CONTEXT_INFORMATION  "information"
 
