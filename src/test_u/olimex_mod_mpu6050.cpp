@@ -830,24 +830,34 @@ do_work (int argc_in,
 //  }
 
   // step8: dispatch events
-  Common_Event_Tools::dispatchEvents (dispatch_state_s);
+  if (!interfaceDefinitionFile_in.empty ())
+    COMMON_UI_GTK_MANAGER_SINGLETON::instance ()->wait (false);
+  else
+    Common_Event_Tools::dispatchEvents (dispatch_state_s);
 
   // step9: clean up
   configuration.moduleHandlerConfiguration.stream->stop (true,
-                                                         true,
+                                                         false,
                                                          false);
-//  connectionManager_p->stop ();
-//  connectionManager_p->abort ();
-//  connectionManager_p->wait ();
-  //delete iconnector_p;
+
+  connectionManager_p->stop ();
+  connectionManager_p->abort ();
+  connectionManager_p->wait ();
+
 #if defined (ACE_WIN32) || defined (ACE_WIN64)
 #else
-//  netlinkConnectionManager_p->stop ();
-//  netlinkConnectionManager_p->abort ();
-//  netlinkConnectionManager_p->wait ();
+  netlinkConnectionManager_p->stop ();
+  netlinkConnectionManager_p->abort ();
+  netlinkConnectionManager_p->wait ();
 //  if (!clientMode_in)
 //    delete netlink_iconnector_p;
 #endif
+
+  // step10: stop event dispatch
+  Common_Event_Tools::finalizeEventDispatch (dispatch_state_s, // dispatch state
+                                             true,             // wait for completion ?
+                                             false);           // close singletons ?
+
 //  result = event_handler_module.close ();
 //  if (result == -1)
 //    ACE_DEBUG ((LM_ERROR,

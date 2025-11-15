@@ -52,9 +52,13 @@ Olimex_Mod_MPU6050_SignalHandler::handle (const struct Common_Signal& signal_in)
 
   bool stop_event_dispatching = false;
   bool connect = false;
-//  bool abort = false;
+
   switch (signal_in.signal)
   {
+#if !defined (ACE_WIN32) && !defined (ACE_WIN64)
+    case SIGCHLD:
+      return;
+#endif
     case SIGINT:
 // *PORTABILITY*: on Windows SIGQUIT is not defined
 #if !defined (ACE_WIN32) && !defined (ACE_WIN64)
@@ -96,8 +100,8 @@ Olimex_Mod_MPU6050_SignalHandler::handle (const struct Common_Signal& signal_in)
     default:
     {
       ACE_DEBUG ((LM_ERROR,
-                  ACE_TEXT ("received invalid/unknown signal: \"%S\", returning\n"),
-                  signal_in));
+                  ACE_TEXT ("received invalid/unknown signal (was: %d: \"%S\"), returning\n"),
+                  signal_in.signal));
       return;
     }
   } // end SWITCH
@@ -144,8 +148,9 @@ Olimex_Mod_MPU6050_SignalHandler::handle (const struct Common_Signal& signal_in)
       }
     } // end IF
 
+    // *WARNING*: never 'wait' in a signal handler !
     if (inherited::configuration_->stream)
-      inherited::configuration_->stream->stop (true,   // wait ?
+      inherited::configuration_->stream->stop (false,  // wait ?
                                                false,  // recurse upstream ?
                                                false); // high priority ?
 
@@ -153,10 +158,5 @@ Olimex_Mod_MPU6050_SignalHandler::handle (const struct Common_Signal& signal_in)
     if (!inherited::configuration_->consoleMode)
       COMMON_UI_GTK_MANAGER_SINGLETON::instance ()->stop (false,
                                                           false);
-
-    // step3: stop event dispatch
-    Common_Event_Tools::finalizeEventDispatch (*inherited::configuration_->dispatchState, // dispatch state
-                                               false,                                     // wait for completion ?
-                                               false);                                    // close singletons ?
   } // end IF
 }

@@ -544,148 +544,67 @@ glarea_render_cb (GtkGLArea* GLArea_in,
   // sanity check(s)
   ACE_ASSERT (GLArea_in);
   ACE_UNUSED_ARG (context_in);
-  ACE_ASSERT (userData_in);
-  struct Test_U_AudioEffect_UI_CBDataBase* ui_cb_data_base_p =
-    static_cast<struct Test_U_AudioEffect_UI_CBDataBase*> (userData_in);
-  ACE_ASSERT (ui_cb_data_base_p);
+  struct Olimex_Mod_MPU6050_GTK_CBData* cb_data_p =
+    static_cast<struct Olimex_Mod_MPU6050_GTK_CBData*> (userData_in);
+  ACE_ASSERT (cb_data_p);
 
-  GLuint* texture_id_p = NULL;
-  GLuint* VAO_p = NULL;
-  GLuint* EBO_p = NULL;
-  Common_GL_Shader* shader_p = NULL;
-#if defined (ACE_WIN32) || defined (ACE_WIN64)
-  struct Test_U_AudioEffect_DirectShow_UI_CBData* directshow_ui_cb_data_p =
-    NULL;
-  struct Test_U_AudioEffect_MediaFoundation_UI_CBData* mediafoundation_ui_cb_data_p =
-    NULL;
-  Test_U_AudioEffect_MediaFoundation_StreamConfiguration_t::ITERATOR_T mediafoundation_modulehandler_configuration_iterator;
-  Test_U_AudioEffect_DirectShow_StreamConfiguration_t::ITERATOR_T directshow_modulehandler_configuration_iterator;
-  switch (ui_cb_data_base_p->mediaFramework)
-  {
-    case STREAM_MEDIAFRAMEWORK_DIRECTSHOW:
-    {
-      directshow_ui_cb_data_p =
-        static_cast<struct Test_U_AudioEffect_DirectShow_UI_CBData*> (userData_in);
-      // sanity check(s)
-      ACE_ASSERT (directshow_ui_cb_data_p);
-      ACE_ASSERT (directshow_ui_cb_data_p->configuration);
+//   static bool is_first = true;
+//   if (unlikely (is_first))
+//   {
+//     is_first = false;
 
-      directshow_modulehandler_configuration_iterator =
-        directshow_ui_cb_data_p->configuration->streamConfiguration.find (ACE_TEXT_ALWAYS_CHAR (""));
-      ACE_ASSERT (directshow_modulehandler_configuration_iterator != directshow_ui_cb_data_p->configuration->streamConfiguration.end ());
+//     // initialize options
+//     glClearColor (0.0F, 0.0F, 0.0F, 1.0F);              // Black Background
+//     //glClearDepth (1.0);                                 // Depth Buffer Setup
+//     /* speedups */
+//     //  glDisable (GL_CULL_FACE);
+//     //  glEnable (GL_DITHER);
+//     //  glHint (GL_PERSPECTIVE_CORRECTION_HINT, GL_FASTEST);
+//     //  glHint (GL_POLYGON_SMOOTH_HINT, GL_FASTEST);
+//     // glHint (GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST); // Really Nice Perspective
+//     // glDepthFunc (GL_LESS);                              // The Type Of Depth Testing To Do
+//     // glDepthMask (GL_TRUE);
+//     glEnable (GL_TEXTURE_2D);                           // Enable Texture Mapping
+//     // glShadeModel (GL_SMOOTH);                           // Enable Smooth Shading
+//     // glHint (GL_POLYGON_SMOOTH_HINT, GL_NICEST);
+//     //glDisable (GL_BLEND);
+//     glEnable (GL_BLEND);                                // Enable Semi-Transparency
+//     // glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+// //    glBlendFunc (GL_ONE, GL_ZERO);
+// //    glBlendFunc (GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+//     // glEnable (GL_DEPTH_TEST);                           // Enables Depth Testing
 
-      texture_id_p =
-        &(*directshow_modulehandler_configuration_iterator).second.second->OpenGLTextureId;
-      VAO_p =
-        &((*directshow_modulehandler_configuration_iterator).second.second->VAO);
-      EBO_p =
-        &((*directshow_modulehandler_configuration_iterator).second.second->EBO);
-      shader_p =
-        &((*directshow_modulehandler_configuration_iterator).second.second->shader);
-      break;
-    }
-    case STREAM_MEDIAFRAMEWORK_MEDIAFOUNDATION:
-    {
-      mediafoundation_ui_cb_data_p =
-        static_cast<struct Test_U_AudioEffect_MediaFoundation_UI_CBData*> (userData_in);
-      // sanity check(s)
-      ACE_ASSERT (mediafoundation_ui_cb_data_p);
-      ACE_ASSERT (mediafoundation_ui_cb_data_p->configuration);
+//     // glColorMaterial (GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
+//     // glEnable (GL_COLOR_MATERIAL);
+//     // glEnable (GL_NORMALIZE);
+// //    glEnable (GL_LIGHTING);
 
-      mediafoundation_modulehandler_configuration_iterator =
-        mediafoundation_ui_cb_data_p->configuration->streamConfiguration.find (ACE_TEXT_ALWAYS_CHAR (""));
-      ACE_ASSERT (mediafoundation_modulehandler_configuration_iterator != mediafoundation_ui_cb_data_p->configuration->streamConfiguration.end ());
-
-      texture_id_p =
-        &(*mediafoundation_modulehandler_configuration_iterator).second.second->OpenGLTextureId;
-      break;
-    }
-    default:
-    {
-      ACE_DEBUG ((LM_ERROR,
-                  ACE_TEXT ("invalid/unknown media framework (was: %d), aborting\n"),
-                  ui_cb_data_base_p->mediaFramework));
-      return false;
-    }
-  } // end SWITCH
-#else
-  struct Test_U_AudioEffect_UI_CBData* ui_cb_data_p =
-      static_cast<struct Test_U_AudioEffect_UI_CBData*> (userData_in);
-  // sanity check(s)
-  ACE_ASSERT (ui_cb_data_p);
-  ACE_ASSERT (ui_cb_data_p->configuration);
-  Test_U_AudioEffect_ALSA_StreamConfiguration_t::ITERATOR_T modulehandler_configuration_iterator =
-    ui_cb_data_p->configuration->streamConfiguration.find (ACE_TEXT_ALWAYS_CHAR (""));
-  ACE_ASSERT (modulehandler_configuration_iterator != ui_cb_data_p->configuration->streamConfiguration.end ());
-
-  texture_id_p =
-    &(*modulehandler_configuration_iterator).second.second->OpenGLTextureId;
-  VAO_p =
-    &((*modulehandler_configuration_iterator).second.second->VAO);
-  EBO_p =
-    &((*modulehandler_configuration_iterator).second.second->EBO);
-  shader_p =
-    &((*modulehandler_configuration_iterator).second.second->shader);
-#endif
-  ACE_ASSERT (texture_id_p && VAO_p && EBO_p && shader_p);
-
-  static bool is_first = true;
-  if (unlikely (is_first))
-  {
-    is_first = false;
-
-    // initialize options
-    glClearColor (0.0F, 0.0F, 0.0F, 1.0F);              // Black Background
-    //glClearDepth (1.0);                                 // Depth Buffer Setup
-    /* speedups */
-    //  glDisable (GL_CULL_FACE);
-    //  glEnable (GL_DITHER);
-    //  glHint (GL_PERSPECTIVE_CORRECTION_HINT, GL_FASTEST);
-    //  glHint (GL_POLYGON_SMOOTH_HINT, GL_FASTEST);
-    // glHint (GL_PERSPECTIVE_CORRECTION_HINT, GL_NICEST); // Really Nice Perspective
-    // glDepthFunc (GL_LESS);                              // The Type Of Depth Testing To Do
-    // glDepthMask (GL_TRUE);
-    glEnable (GL_TEXTURE_2D);                           // Enable Texture Mapping
-    // glShadeModel (GL_SMOOTH);                           // Enable Smooth Shading
-    // glHint (GL_POLYGON_SMOOTH_HINT, GL_NICEST);
-    //glDisable (GL_BLEND);
-    glEnable (GL_BLEND);                                // Enable Semi-Transparency
-    // glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-//    glBlendFunc (GL_ONE, GL_ZERO);
-//    glBlendFunc (GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-    // glEnable (GL_DEPTH_TEST);                           // Enables Depth Testing
-
-    // glColorMaterial (GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
-    // glEnable (GL_COLOR_MATERIAL);
-    // glEnable (GL_NORMALIZE);
-//    glEnable (GL_LIGHTING);
-
-    // initialize texture ?
-    if (!*texture_id_p)
-    {
-      std::string filename = Common_File_Tools::getWorkingDirectory ();
-      filename += ACE_DIRECTORY_SEPARATOR_CHAR;
-      filename += ACE_TEXT_ALWAYS_CHAR (COMMON_LOCATION_DATA_SUBDIRECTORY);
-      filename += ACE_DIRECTORY_SEPARATOR_CHAR;
-      filename +=
-        ACE_TEXT_ALWAYS_CHAR (TEST_U_STREAM_AUDIOEFFECT_OPENGL_DEFAULT_TEXTURE_FILE);
-      *texture_id_p = Common_GL_Tools::loadTexture (filename, true);
-      if (!*texture_id_p)
-      {
-        ACE_DEBUG ((LM_ERROR,
-                    ACE_TEXT ("failed to Common_GL_Tools::load(\"%s\"), returning\n"),
-                    ACE_TEXT (filename.c_str ())));
-        return FALSE;
-      } // end IF
-    } // end IF
-    ACE_DEBUG ((LM_DEBUG,
-                ACE_TEXT ("OpenGL texture id: %u\n"),
-                *texture_id_p));
-  } // end IF
+//     // initialize texture ?
+//     // if (!cb_data_p->OpenGLTextureId)
+//     // {
+//     //   std::string filename = Common_File_Tools::getWorkingDirectory ();
+//     //   filename += ACE_DIRECTORY_SEPARATOR_CHAR;
+//     //   filename += ACE_TEXT_ALWAYS_CHAR (COMMON_LOCATION_DATA_SUBDIRECTORY);
+//     //   filename += ACE_DIRECTORY_SEPARATOR_CHAR;
+//     //   filename +=
+//     //     ACE_TEXT_ALWAYS_CHAR (OLIMEX_MOD_MPU6050_OPENGL_DEFAULT_TEXTURE_FILE);
+//     //   cb_data_p->OpenGLTextureId = Common_GL_Tools::loadTexture (filename, true);
+//     //   if (!cb_data_p->OpenGLTextureId)
+//     //   {
+//     //     ACE_DEBUG ((LM_ERROR,
+//     //                 ACE_TEXT ("failed to Common_GL_Tools::load(\"%s\"), returning\n"),
+//     //                 ACE_TEXT (filename.c_str ())));
+//     //     return FALSE;
+//     //   } // end IF
+//     //   ACE_DEBUG ((LM_DEBUG,
+//     //               ACE_TEXT ("OpenGL texture id: %u\n"),
+//     //               cb_data_p->OpenGLTextureId));
+//     // } // end IF
+//   } // end IF
 
   glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-  glBindTexture (GL_TEXTURE_2D, *texture_id_p);
+  glBindTexture (GL_TEXTURE_2D, cb_data_p->OpenGLTextureId);
 
   // //static GLfloat rot_x = 0.0f;
   // //static GLfloat rot_y = 0.0f;
@@ -696,17 +615,22 @@ glarea_render_cb (GtkGLArea* GLArea_in,
 
   // ui_cb_data_base_p->objectRotationStep -= 1.0f; // Decrease The Rotation Variable For The Cube
 
-  shader_p->use ();
+  cb_data_p->shader.use ();
 
 #if defined (GLM_SUPPORT)
-  static glm::vec3 rotation_s (0.0f, 0.0f, 1.0f);
-
+  // static glm::vec3 rotation_s = cb_data_p->OpenGLCamera.rotation;
   glm::mat4 model_matrix = glm::mat4 (1.0f); // make sure to initialize matrix to identity matrix first
   model_matrix = glm::translate (model_matrix,
                                  glm::vec3 (0.0f, 0.0f, -3.0f));
   model_matrix = glm::rotate (model_matrix,
-                              glm::radians (ui_cb_data_base_p->objectRotation),
-                              rotation_s);
+                              glm::radians (cb_data_p->OpenGLCamera.rotation.x),
+                              glm::vec3 (1.0f, 0.0f, 0.0f));
+  model_matrix = glm::rotate (model_matrix,
+                              glm::radians (cb_data_p->OpenGLCamera.rotation.y),
+                              glm::vec3 (0.0f, 1.0f, 0.0f));
+  model_matrix = glm::rotate (model_matrix,
+                              glm::radians (cb_data_p->OpenGLCamera.rotation.z),
+                              glm::vec3 (0.0f, 0.0f, 1.0f));
   glm::mat4 view_matrix = glm::lookAt (glm::vec3 (0.0f, 0.0f, 0.0f),
                                        glm::vec3 (0.0f, 0.0f, -1.0f),
                                        glm::vec3 (0.0f, 1.0f, 0.0f));
@@ -721,38 +645,39 @@ glarea_render_cb (GtkGLArea* GLArea_in,
 #error this program requires glm, aborting compilation
 #endif // GLM_SUPPORT
 
-  // compute elapsed time
-#if defined (ACE_WIN32) || defined (ACE_WIN64)
-  std::chrono::steady_clock::time_point tp2 =
-    std::chrono::high_resolution_clock::now ();
-#elif defined (ACE_LINUX)
-  std::chrono::time_point<std::chrono::system_clock, std::chrono::nanoseconds> tp2 =
-    std::chrono::high_resolution_clock::now ();
-#else
-#error missing implementation, aborting
-#endif // ACE_WIN32 || ACE_WIN64 || ACE_LINUX
+//   // compute elapsed time
+// #if defined (ACE_WIN32) || defined (ACE_WIN64)
+//   std::chrono::steady_clock::time_point tp2 =
+//     std::chrono::high_resolution_clock::now ();
+// #elif defined (ACE_LINUX)
+//   std::chrono::time_point<std::chrono::system_clock, std::chrono::nanoseconds> tp2 =
+//     std::chrono::high_resolution_clock::now ();
+// #else
+// #error missing implementation, aborting
+// #endif // ACE_WIN32 || ACE_WIN64 || ACE_LINUX
 
-#if defined (ACE_WIN32) || defined (ACE_WIN64)
-  static std::chrono::steady_clock::time_point tp_last = tp2;
-#elif defined (ACE_LINUX)
-  static std::chrono::time_point<std::chrono::system_clock, std::chrono::nanoseconds> tp_last = tp2;
-#else
-#error missing implementation, aborting
-#endif // ACE_WIN32 || ACE_WIN64 || ACE_LINUX
-  std::chrono::duration<float> elapsed_time_2 = tp2 - tp_last;
-  static float duration_f = 0.0f;
-  duration_f += elapsed_time_2.count ();
-  tp_last = tp2;
+// #if defined (ACE_WIN32) || defined (ACE_WIN64)
+//   static std::chrono::steady_clock::time_point tp_last = tp2;
+// #elif defined (ACE_LINUX)
+//   static std::chrono::time_point<std::chrono::system_clock, std::chrono::nanoseconds> tp_last = tp2;
+// #else
+// #error missing implementation, aborting
+// #endif // ACE_WIN32 || ACE_WIN64 || ACE_LINUX
+//   std::chrono::duration<float> elapsed_time_2 = tp2 - tp_last;
+//   static float duration_f = 0.0f;
+//   duration_f += elapsed_time_2.count ();
+//   tp_last = tp2;
 
 #if defined (GLM_SUPPORT)
-  shader_p->setMat4 (ACE_TEXT_ALWAYS_CHAR ("model"), model_matrix);
-  shader_p->setMat4 (ACE_TEXT_ALWAYS_CHAR ("view"), view_matrix);
-  shader_p->setMat4 (ACE_TEXT_ALWAYS_CHAR ("projection"), projection_matrix);
+  cb_data_p->shader.setMat4 (ACE_TEXT_ALWAYS_CHAR ("model"), model_matrix);
+  cb_data_p->shader.setMat4 (ACE_TEXT_ALWAYS_CHAR ("view"), view_matrix);
+  cb_data_p->shader.setMat4 (ACE_TEXT_ALWAYS_CHAR ("projection"), projection_matrix);
 #endif // GLM_SUPPORT
-  shader_p->setInt (ACE_TEXT_ALWAYS_CHAR ("texture1"), 0); // *IMPORTANT NOTE*: <-- texture unit (!) not -id
+  cb_data_p->shader.setInt (ACE_TEXT_ALWAYS_CHAR ("texture1"), 0); // *IMPORTANT NOTE*: <-- texture unit (!) not -id
+  cb_data_p->shader.setFloat (ACE_TEXT_ALWAYS_CHAR ("time"), 0.0f);
 
-  glBindVertexArray (*VAO_p);
-  glBindBuffer (GL_ELEMENT_ARRAY_BUFFER, *EBO_p);
+  glBindVertexArray (cb_data_p->VAO);
+  glBindBuffer (GL_ELEMENT_ARRAY_BUFFER, cb_data_p->EBO);
 
   glDrawElements (GL_TRIANGLE_STRIP, 34, GL_UNSIGNED_BYTE, NULL);
 
@@ -761,36 +686,36 @@ glarea_render_cb (GtkGLArea* GLArea_in,
 
   glBindTexture (GL_TEXTURE_2D, 0);
 
-  bool has_rotations_b = hasRotateInstruction (ui_cb_data_base_p);
-  processInstructions (ui_cb_data_base_p);
+  // bool has_rotations_b = hasRotateInstruction (ui_cb_data_base_p);
+  // processInstructions (ui_cb_data_base_p);
 
   // "smooth" (random-) rotation
-#if defined (GLM_SUPPORT)
-#define TRANSITION_DURATION_F 2.0f // second(s)
-  ACE_ASSERT (TRANSITION_DURATION_F != 0.0f); // would divide by 0 (see below)
-  static glm::vec3 rotation_from = rotation_s;
-  static glm::vec3 rotation_to (1.0f, 1.0f, 1.0f);
-  if (duration_f >= TRANSITION_DURATION_F)
-  {
-    duration_f -= TRANSITION_DURATION_F;
+// #if defined (GLM_SUPPORT)
+// #define TRANSITION_DURATION_F 2.0f // second(s)
+//   ACE_ASSERT (TRANSITION_DURATION_F != 0.0f); // would divide by 0 (see below)
+//   static glm::vec3 rotation_from = rotation_s;
+//   static glm::vec3 rotation_to (1.0f, 1.0f, 1.0f);
+//   if (duration_f >= TRANSITION_DURATION_F)
+//   {
+//     duration_f -= TRANSITION_DURATION_F;
 
-    rotation_from = rotation_s;
-    if (has_rotations_b)
-    {
-      rotation_to.x = Common_Tools::getRandomNumber (0.0f, 1.0f);
-      rotation_to.y = Common_Tools::getRandomNumber (0.0f, 1.0f);
-      rotation_to.z = Common_Tools::getRandomNumber (0.0f, 1.0f);
-      rotation_to = glm::normalize (rotation_to);
-    } // end IF
-  } // end IF
-  rotation_s = glm::mix (rotation_from, rotation_to, duration_f / TRANSITION_DURATION_F);
-#endif // GLM_SUPPORT
+//     rotation_from = rotation_s;
+//     if (has_rotations_b)
+//     {
+//       rotation_to.x = Common_Tools::getRandomNumber (0.0f, 1.0f);
+//       rotation_to.y = Common_Tools::getRandomNumber (0.0f, 1.0f);
+//       rotation_to.z = Common_Tools::getRandomNumber (0.0f, 1.0f);
+//       rotation_to = glm::normalize (rotation_to);
+//     } // end IF
+//   } // end IF
+//   rotation_s = glm::mix (rotation_from, rotation_to, duration_f / TRANSITION_DURATION_F);
+// #endif // GLM_SUPPORT
 
-  shader_p->unuse ();
+  cb_data_p->shader.unuse ();
 
   gtk_gl_area_queue_render (GLArea_in);
 
-  return FALSE;
+  return TRUE;
 }
 
 void
@@ -805,45 +730,45 @@ glarea_resize_cb (GtkGLArea* GLArea_in,
   ACE_ASSERT (GLArea_in);
   ACE_ASSERT (userData_in);
 
-  struct Test_U_AudioEffect_UI_CBDataBase* ui_cb_data_base_p =
-    static_cast<struct Test_U_AudioEffect_UI_CBDataBase*> (userData_in);
+  struct Olimex_Mod_MPU6050_GTK_CBDataBase* ui_cb_data_base_p =
+    static_cast<struct Olimex_Mod_MPU6050_GTK_CBDataBase*> (userData_in);
 
   // sanity check(s)
   ACE_ASSERT (ui_cb_data_base_p);
 
 //#if defined (ACE_WIN32) || defined (ACE_WIN64)
-//  struct Test_U_AudioEffect_DirectShow_UI_CBData* directshow_ui_cb_data_p = NULL;
-//  struct Test_U_AudioEffect_MediaFoundation_UI_CBData* mediafoundation_ui_cb_data_p =
+//  struct Test_U_AudioEffect_DirectShow_UI_CBData* directshow_cb_data_p = NULL;
+//  struct Test_U_AudioEffect_MediaFoundation_UI_CBData* mediafoundation_cb_data_p =
 //    NULL;
 //  Test_U_AudioEffect_MediaFoundation_StreamConfiguration_t::ITERATOR_T mediafoundation_modulehandler_configuration_iterator;
 //  Test_U_AudioEffect_DirectShow_StreamConfiguration_t::ITERATOR_T directshow_modulehandler_configuration_iterator;
 //  if (data_base_p->useMediaFoundation)
 //  {
-//    mediafoundation_ui_cb_data_p =
+//    mediafoundation_cb_data_p =
 //      static_cast<struct Test_U_AudioEffect_MediaFoundation_UI_CBData*> (userData_in);
 //    // sanity check(s)
-//    ACE_ASSERT (mediafoundation_ui_cb_data_p);
-//    ACE_ASSERT (mediafoundation_ui_cb_data_p->configuration);
+//    ACE_ASSERT (mediafoundation_cb_data_p);
+//    ACE_ASSERT (mediafoundation_cb_data_p->configuration);
 //
 //    mediafoundation_modulehandler_configuration_iterator =
-//      mediafoundation_ui_cb_data_p->configuration->streamConfiguration.find (ACE_TEXT_ALWAYS_CHAR (""));
-//    ACE_ASSERT (mediafoundation_modulehandler_configuration_iterator != mediafoundation_ui_cb_data_p->configuration->streamConfiguration.end ());
+//      mediafoundation_cb_data_p->configuration->streamConfiguration.find (ACE_TEXT_ALWAYS_CHAR (""));
+//    ACE_ASSERT (mediafoundation_modulehandler_configuration_iterator != mediafoundation_cb_data_p->configuration->streamConfiguration.end ());
 //  } // end IF
 //  else
 //  {
-//    directshow_ui_cb_data_p =
+//    directshow_cb_data_p =
 //      static_cast<struct Test_U_AudioEffect_DirectShow_UI_CBData*> (userData_in);
 //    // sanity check(s)
-//    ACE_ASSERT (directshow_ui_cb_data_p);
-//    ACE_ASSERT (directshow_ui_cb_data_p->configuration);
+//    ACE_ASSERT (directshow_cb_data_p);
+//    ACE_ASSERT (directshow_cb_data_p->configuration);
 //
 //    directshow_modulehandler_configuration_iterator =
-//      directshow_ui_cb_data_p->configuration->streamConfiguration.find (ACE_TEXT_ALWAYS_CHAR (""));
-//    ACE_ASSERT (directshow_modulehandler_configuration_iterator != directshow_ui_cb_data_p->configuration->streamConfiguration.end ());
+//      directshow_cb_data_p->configuration->streamConfiguration.find (ACE_TEXT_ALWAYS_CHAR (""));
+//    ACE_ASSERT (directshow_modulehandler_configuration_iterator != directshow_cb_data_p->configuration->streamConfiguration.end ());
 //  } // end ELSE
 //#else
-//  struct Test_U_AudioEffect_UI_CBData* data_p =
-//      static_cast<struct Test_U_AudioEffect_UI_CBData*> (userData_in);
+//  struct Olimex_Mod_MPU6050_GTK_CBData* data_p =
+//      static_cast<struct Olimex_Mod_MPU6050_GTK_CBData*> (userData_in);
 //  // sanity check(s)
 //  ACE_ASSERT (data_p);
 //  ACE_ASSERT (data_p->configuration);
@@ -995,31 +920,31 @@ glarea_size_allocate_event_cb (GtkWidget* widget_in,
   STREAM_TRACE (ACE_TEXT ("::glarea_size_allocate_event_cb"));
 
   // sanity check(s)
-  struct Test_U_AudioEffect_UI_CBDataBase* ui_cb_data_base_p =
-    static_cast<struct Test_U_AudioEffect_UI_CBDataBase*> (userData_in);
+  struct Olimex_Mod_MPU6050_GTK_CBDataBase* ui_cb_data_base_p =
+    static_cast<struct Olimex_Mod_MPU6050_GTK_CBDataBase*> (userData_in);
   ACE_ASSERT (ui_cb_data_base_p);
 #if defined (ACE_WIN32) || defined (ACE_WIN64)
-  struct Test_U_AudioEffect_DirectShow_UI_CBData* directshow_ui_cb_data_p =
+  struct Test_U_AudioEffect_DirectShow_UI_CBData* directshow_cb_data_p =
     NULL;
-  struct Test_U_AudioEffect_MediaFoundation_UI_CBData* mediafoundation_ui_cb_data_p =
+  struct Test_U_AudioEffect_MediaFoundation_UI_CBData* mediafoundation_cb_data_p =
     NULL;
   if (ui_cb_data_base_p->useMediaFoundation)
   {
-    mediafoundation_ui_cb_data_p =
+    mediafoundation_cb_data_p =
       static_cast<struct Test_U_AudioEffect_MediaFoundation_UI_CBData*> (userData_in);
-    ACE_ASSERT (mediafoundation_ui_cb_data_p);
-    ACE_ASSERT (mediafoundation_ui_cb_data_p->configuration);
+    ACE_ASSERT (mediafoundation_cb_data_p);
+    ACE_ASSERT (mediafoundation_cb_data_p->configuration);
   } // end IF
   else
   {
-    directshow_ui_cb_data_p =
+    directshow_cb_data_p =
       static_cast<struct Test_U_AudioEffect_DirectShow_UI_CBData*> (userData_in);
-    ACE_ASSERT (directshow_ui_cb_data_p);
-    ACE_ASSERT (directshow_ui_cb_data_p->configuration);
+    ACE_ASSERT (directshow_cb_data_p);
+    ACE_ASSERT (directshow_cb_data_p->configuration);
   } // end ELSE
 #else
-  struct Test_U_AudioEffect_UI_CBData* data_p =
-    static_cast<struct Test_U_AudioEffect_UI_CBData*> (userData_in);
+  struct Olimex_Mod_MPU6050_GTK_CBData* data_p =
+    static_cast<struct Olimex_Mod_MPU6050_GTK_CBData*> (userData_in);
   ACE_ASSERT (data_p);
   ACE_ASSERT (data_p->configuration);
   Test_U_AudioEffect_ALSA_StreamConfiguration_t::ITERATOR_T modulehandler_configuration_iterator =
@@ -1069,17 +994,17 @@ glarea_draw_cb (GtkWidget* widget_in,
   ACE_ASSERT (widget_in);
   ACE_ASSERT (userData_in);
 
-  struct Test_U_AudioEffect_UI_CBDataBase* ui_cb_data_base_p =
-    static_cast<struct Test_U_AudioEffect_UI_CBDataBase*> (userData_in);
+  struct Olimex_Mod_MPU6050_GTK_CBDataBase* ui_cb_data_base_p =
+    static_cast<struct Olimex_Mod_MPU6050_GTK_CBDataBase*> (userData_in);
 
   // sanity check(s)
   ACE_ASSERT (ui_cb_data_base_p);
 
   GLuint* texture_id_p = NULL;
 #if defined (ACE_WIN32) || defined (ACE_WIN64)
-  struct Test_U_AudioEffect_DirectShow_UI_CBData* directshow_ui_cb_data_p =
+  struct Test_U_AudioEffect_DirectShow_UI_CBData* directshow_cb_data_p =
     NULL;
-  struct Test_U_AudioEffect_MediaFoundation_UI_CBData* mediafoundation_ui_cb_data_p =
+  struct Test_U_AudioEffect_MediaFoundation_UI_CBData* mediafoundation_cb_data_p =
     NULL;
   Test_U_AudioEffect_MediaFoundation_StreamConfiguration_t::ITERATOR_T mediafoundation_modulehandler_configuration_iterator;
   Test_U_AudioEffect_DirectShow_StreamConfiguration_t::ITERATOR_T directshow_modulehandler_configuration_iterator;
@@ -1087,15 +1012,15 @@ glarea_draw_cb (GtkWidget* widget_in,
   {
     case STREAM_MEDIAFRAMEWORK_DIRECTSHOW:
     {
-      directshow_ui_cb_data_p =
+      directshow_cb_data_p =
         static_cast<struct Test_U_AudioEffect_DirectShow_UI_CBData*> (userData_in);
       // sanity check(s)
-      ACE_ASSERT (directshow_ui_cb_data_p);
-      ACE_ASSERT (directshow_ui_cb_data_p->configuration);
+      ACE_ASSERT (directshow_cb_data_p);
+      ACE_ASSERT (directshow_cb_data_p->configuration);
 
       directshow_modulehandler_configuration_iterator =
-        directshow_ui_cb_data_p->configuration->streamConfiguration.find (ACE_TEXT_ALWAYS_CHAR (""));
-      ACE_ASSERT (directshow_modulehandler_configuration_iterator != directshow_ui_cb_data_p->configuration->streamConfiguration.end ());
+        directshow_cb_data_p->configuration->streamConfiguration.find (ACE_TEXT_ALWAYS_CHAR (""));
+      ACE_ASSERT (directshow_modulehandler_configuration_iterator != directshow_cb_data_p->configuration->streamConfiguration.end ());
 
       texture_id_p =
         &(*directshow_modulehandler_configuration_iterator).second.second->OpenGLTextureId;
@@ -1103,15 +1028,15 @@ glarea_draw_cb (GtkWidget* widget_in,
     }
     case STREAM_MEDIAFRAMEWORK_MEDIAFOUNDATION:
     {
-      mediafoundation_ui_cb_data_p =
+      mediafoundation_cb_data_p =
         static_cast<struct Test_U_AudioEffect_MediaFoundation_UI_CBData*> (userData_in);
       // sanity check(s)
-      ACE_ASSERT (mediafoundation_ui_cb_data_p);
-      ACE_ASSERT (mediafoundation_ui_cb_data_p->configuration);
+      ACE_ASSERT (mediafoundation_cb_data_p);
+      ACE_ASSERT (mediafoundation_cb_data_p->configuration);
 
       mediafoundation_modulehandler_configuration_iterator =
-        mediafoundation_ui_cb_data_p->configuration->streamConfiguration.find (ACE_TEXT_ALWAYS_CHAR (""));
-      ACE_ASSERT (mediafoundation_modulehandler_configuration_iterator != mediafoundation_ui_cb_data_p->configuration->streamConfiguration.end ());
+        mediafoundation_cb_data_p->configuration->streamConfiguration.find (ACE_TEXT_ALWAYS_CHAR (""));
+      ACE_ASSERT (mediafoundation_modulehandler_configuration_iterator != mediafoundation_cb_data_p->configuration->streamConfiguration.end ());
 
       texture_id_p =
         &(*mediafoundation_modulehandler_configuration_iterator).second.second->OpenGLTextureId;
@@ -1126,8 +1051,8 @@ glarea_draw_cb (GtkWidget* widget_in,
     }
   } // end SWITCH
 #else
-  struct Test_U_AudioEffect_UI_CBData* data_p =
-    static_cast<struct Test_U_AudioEffect_UI_CBData*> (userData_in);
+  struct Olimex_Mod_MPU6050_GTK_CBData* data_p =
+    static_cast<struct Olimex_Mod_MPU6050_GTK_CBData*> (userData_in);
 
   // sanity check(s)
   ACE_ASSERT (data_p);
@@ -1219,34 +1144,34 @@ glarea_configure_event_cb (GtkWidget* widget_in,
 
 #if defined (ACE_WIN32) || defined (ACE_WIN64)
   // sanity check(s)
-  struct Test_U_AudioEffect_UI_CBDataBase* ui_cb_data_base_p =
-    static_cast<struct Test_U_AudioEffect_UI_CBDataBase*> (userData_in);
+  struct Olimex_Mod_MPU6050_GTK_CBDataBase* ui_cb_data_base_p =
+    static_cast<struct Olimex_Mod_MPU6050_GTK_CBDataBase*> (userData_in);
   ACE_ASSERT (ui_cb_data_base_p);
 #endif // ACE_WIN32 || ACE_WIN64
 
 #if defined (ACE_WIN32) || defined (ACE_WIN64)
-  struct Test_U_AudioEffect_DirectShow_UI_CBData* directshow_ui_cb_data_p =
+  struct Test_U_AudioEffect_DirectShow_UI_CBData* directshow_cb_data_p =
     NULL;
-  struct Test_U_AudioEffect_MediaFoundation_UI_CBData* mediafoundation_ui_cb_data_p =
+  struct Test_U_AudioEffect_MediaFoundation_UI_CBData* mediafoundation_cb_data_p =
     NULL;
   switch (ui_cb_data_base_p->mediaFramework)
   {
     case STREAM_MEDIAFRAMEWORK_DIRECTSHOW:
     {
       // sanity check(s)
-      directshow_ui_cb_data_p =
+      directshow_cb_data_p =
         static_cast<struct Test_U_AudioEffect_DirectShow_UI_CBData*> (userData_in);
-      ACE_ASSERT (directshow_ui_cb_data_p);
-      ACE_ASSERT (directshow_ui_cb_data_p->configuration);
+      ACE_ASSERT (directshow_cb_data_p);
+      ACE_ASSERT (directshow_cb_data_p->configuration);
       break;
     }
     case STREAM_MEDIAFRAMEWORK_MEDIAFOUNDATION:
     {
       // sanity check(s)
-      mediafoundation_ui_cb_data_p =
+      mediafoundation_cb_data_p =
         static_cast<struct Test_U_AudioEffect_MediaFoundation_UI_CBData*> (userData_in);
-      ACE_ASSERT (mediafoundation_ui_cb_data_p);
-      ACE_ASSERT (mediafoundation_ui_cb_data_p->configuration);
+      ACE_ASSERT (mediafoundation_cb_data_p);
+      ACE_ASSERT (mediafoundation_cb_data_p->configuration);
       break;
     }
     default:
@@ -1259,8 +1184,8 @@ glarea_configure_event_cb (GtkWidget* widget_in,
   } // end SWITCH
 #else
   // sanity check(s)
-  struct Test_U_AudioEffect_UI_CBData* data_p =
-    static_cast<struct Test_U_AudioEffect_UI_CBData*> (userData_in);
+  struct Olimex_Mod_MPU6050_GTK_CBData* data_p =
+    static_cast<struct Olimex_Mod_MPU6050_GTK_CBData*> (userData_in);
   ACE_ASSERT (data_p);
   ACE_ASSERT (data_p->configuration);
 
@@ -1314,15 +1239,15 @@ glarea_expose_event_cb (GtkWidget* widget_in,
 
   // sanity check(s)
   ACE_ASSERT (widget_in);
-  struct Test_U_AudioEffect_UI_CBDataBase* ui_cb_data_base_p =
-    static_cast<struct Test_U_AudioEffect_UI_CBDataBase*> (userData_in);
+  struct Olimex_Mod_MPU6050_GTK_CBDataBase* ui_cb_data_base_p =
+    static_cast<struct Olimex_Mod_MPU6050_GTK_CBDataBase*> (userData_in);
   ACE_ASSERT (ui_cb_data_base_p);
 
   GLuint* texture_id_p = NULL;
 #if defined (ACE_WIN32) || defined (ACE_WIN64)
-  struct Test_U_AudioEffect_DirectShow_UI_CBData* directshow_ui_cb_data_p =
+  struct Test_U_AudioEffect_DirectShow_UI_CBData* directshow_cb_data_p =
     NULL;
-  struct Test_U_AudioEffect_MediaFoundation_UI_CBData* mediafoundation_ui_cb_data_p =
+  struct Test_U_AudioEffect_MediaFoundation_UI_CBData* mediafoundation_cb_data_p =
     NULL;
   Test_U_AudioEffect_MediaFoundation_StreamConfiguration_t::ITERATOR_T mediafoundation_modulehandler_configuration_iterator;
   Test_U_AudioEffect_DirectShow_StreamConfiguration_t::ITERATOR_T directshow_modulehandler_configuration_iterator;
@@ -1331,13 +1256,13 @@ glarea_expose_event_cb (GtkWidget* widget_in,
     case STREAM_MEDIAFRAMEWORK_DIRECTSHOW:
     {
       // sanity check(s)
-      directshow_ui_cb_data_p =
+      directshow_cb_data_p =
         static_cast<struct Test_U_AudioEffect_DirectShow_UI_CBData*> (userData_in);
-      ACE_ASSERT (directshow_ui_cb_data_p);
-      ACE_ASSERT (directshow_ui_cb_data_p->configuration);
+      ACE_ASSERT (directshow_cb_data_p);
+      ACE_ASSERT (directshow_cb_data_p->configuration);
       directshow_modulehandler_configuration_iterator =
-        directshow_ui_cb_data_p->configuration->streamConfiguration.find (ACE_TEXT_ALWAYS_CHAR (""));
-      ACE_ASSERT (directshow_modulehandler_configuration_iterator != directshow_ui_cb_data_p->configuration->streamConfiguration.end ());
+        directshow_cb_data_p->configuration->streamConfiguration.find (ACE_TEXT_ALWAYS_CHAR (""));
+      ACE_ASSERT (directshow_modulehandler_configuration_iterator != directshow_cb_data_p->configuration->streamConfiguration.end ());
 
       texture_id_p =
         &(*directshow_modulehandler_configuration_iterator).second.second->OpenGLTextureId;
@@ -1346,13 +1271,13 @@ glarea_expose_event_cb (GtkWidget* widget_in,
     case STREAM_MEDIAFRAMEWORK_MEDIAFOUNDATION:
     {
       // sanity check(s)
-      mediafoundation_ui_cb_data_p =
+      mediafoundation_cb_data_p =
         static_cast<struct Test_U_AudioEffect_MediaFoundation_UI_CBData*> (userData_in);
-      ACE_ASSERT (mediafoundation_ui_cb_data_p);
-      ACE_ASSERT (mediafoundation_ui_cb_data_p->configuration);
+      ACE_ASSERT (mediafoundation_cb_data_p);
+      ACE_ASSERT (mediafoundation_cb_data_p->configuration);
       mediafoundation_modulehandler_configuration_iterator =
-        mediafoundation_ui_cb_data_p->configuration->streamConfiguration.find (ACE_TEXT_ALWAYS_CHAR (""));
-      ACE_ASSERT (mediafoundation_modulehandler_configuration_iterator != mediafoundation_ui_cb_data_p->configuration->streamConfiguration.end ());
+        mediafoundation_cb_data_p->configuration->streamConfiguration.find (ACE_TEXT_ALWAYS_CHAR (""));
+      ACE_ASSERT (mediafoundation_modulehandler_configuration_iterator != mediafoundation_cb_data_p->configuration->streamConfiguration.end ());
 
       texture_id_p =
         &(*mediafoundation_modulehandler_configuration_iterator).second.second->OpenGLTextureId;
@@ -1368,8 +1293,8 @@ glarea_expose_event_cb (GtkWidget* widget_in,
   } // end SWITCH
 #else
   // sanity check(s)
-  struct Test_U_AudioEffect_UI_CBData* data_p =
-    static_cast<struct Test_U_AudioEffect_UI_CBData*> (userData_in);
+  struct Olimex_Mod_MPU6050_GTK_CBData* data_p =
+    static_cast<struct Olimex_Mod_MPU6050_GTK_CBData*> (userData_in);
   ACE_ASSERT (data_p);
   ACE_ASSERT (data_p->configuration);
   Test_U_AudioEffect_ALSA_StreamConfiguration_t::ITERATOR_T modulehandler_configuration_iterator =
@@ -1433,35 +1358,35 @@ glarea_configure_event_cb (GtkWidget* widget_in,
 {
   STREAM_TRACE (ACE_TEXT ("::glarea_configure_event_cb"));
 
-  struct Test_U_AudioEffect_UI_CBDataBase* ui_cb_data_base_p =
-    static_cast<struct Test_U_AudioEffect_UI_CBDataBase*> (userData_in);
+  struct Olimex_Mod_MPU6050_GTK_CBDataBase* ui_cb_data_base_p =
+    static_cast<struct Olimex_Mod_MPU6050_GTK_CBDataBase*> (userData_in);
 
   // sanity check(s)
   ACE_ASSERT (ui_cb_data_base_p);
 
 #if defined (ACE_WIN32) || defined (ACE_WIN64)
-  struct Test_U_AudioEffect_DirectShow_UI_CBData* directshow_ui_cb_data_p =
+  struct Test_U_AudioEffect_DirectShow_UI_CBData* directshow_cb_data_p =
     NULL;
-  struct Test_U_AudioEffect_MediaFoundation_UI_CBData* mediafoundation_ui_cb_data_p =
+  struct Test_U_AudioEffect_MediaFoundation_UI_CBData* mediafoundation_cb_data_p =
     NULL;
   switch (ui_cb_data_base_p->mediaFramework)
   {
     case STREAM_MEDIAFRAMEWORK_DIRECTSHOW:
     {
-      directshow_ui_cb_data_p =
+      directshow_cb_data_p =
         static_cast<struct Test_U_AudioEffect_DirectShow_UI_CBData*> (userData_in);
       // sanity check(s)
-      ACE_ASSERT (directshow_ui_cb_data_p);
-      ACE_ASSERT (directshow_ui_cb_data_p->configuration);
+      ACE_ASSERT (directshow_cb_data_p);
+      ACE_ASSERT (directshow_cb_data_p->configuration);
       break;
     }
     case STREAM_MEDIAFRAMEWORK_MEDIAFOUNDATION:
     {
-      mediafoundation_ui_cb_data_p =
+      mediafoundation_cb_data_p =
         static_cast<struct Test_U_AudioEffect_MediaFoundation_UI_CBData*> (userData_in);
       // sanity check(s)
-      ACE_ASSERT (mediafoundation_ui_cb_data_p);
-      ACE_ASSERT (mediafoundation_ui_cb_data_p->configuration);
+      ACE_ASSERT (mediafoundation_cb_data_p);
+      ACE_ASSERT (mediafoundation_cb_data_p->configuration);
       break;
     }
     default:
@@ -1473,8 +1398,8 @@ glarea_configure_event_cb (GtkWidget* widget_in,
     }
   } // end SWITCH
 #else
-  struct Test_U_AudioEffect_UI_CBData* data_p =
-    static_cast<struct Test_U_AudioEffect_UI_CBData*> (userData_in);
+  struct Olimex_Mod_MPU6050_GTK_CBData* data_p =
+    static_cast<struct Olimex_Mod_MPU6050_GTK_CBData*> (userData_in);
 
   // sanity check(s)
   ACE_ASSERT (data_p);
@@ -1522,14 +1447,14 @@ glarea_expose_event_cb (GtkWidget* widget_in,
   // sanity check(s)
   ACE_ASSERT (widget_in);
   ACE_UNUSED_ARG (event_in);
-  struct Test_U_AudioEffect_UI_CBDataBase* ui_cb_data_base_p =
-    static_cast<struct Test_U_AudioEffect_UI_CBDataBase*> (userData_in);
+  struct Olimex_Mod_MPU6050_GTK_CBDataBase* ui_cb_data_base_p =
+    static_cast<struct Olimex_Mod_MPU6050_GTK_CBDataBase*> (userData_in);
   ACE_ASSERT (ui_cb_data_base_p);
 
 #if defined (ACE_WIN32) || defined (ACE_WIN64)
-  struct Test_U_AudioEffect_DirectShow_UI_CBData* directshow_ui_cb_data_p =
+  struct Test_U_AudioEffect_DirectShow_UI_CBData* directshow_cb_data_p =
     NULL;
-  struct Test_U_AudioEffect_MediaFoundation_UI_CBData* mediafoundation_ui_cb_data_p =
+  struct Test_U_AudioEffect_MediaFoundation_UI_CBData* mediafoundation_cb_data_p =
     NULL;
   Test_U_AudioEffect_MediaFoundation_StreamConfiguration_t::ITERATOR_T mediafoundation_modulehandler_configuration_iterator;
   Test_U_AudioEffect_DirectShow_StreamConfiguration_t::ITERATOR_T directshow_modulehandler_configuration_iterator;
@@ -1537,28 +1462,28 @@ glarea_expose_event_cb (GtkWidget* widget_in,
   {
     case STREAM_MEDIAFRAMEWORK_DIRECTSHOW:
     {
-      directshow_ui_cb_data_p =
+      directshow_cb_data_p =
         static_cast<struct Test_U_AudioEffect_DirectShow_UI_CBData*> (userData_in);
       // sanity check(s)
-      ACE_ASSERT (directshow_ui_cb_data_p);
-      ACE_ASSERT (directshow_ui_cb_data_p->configuration);
+      ACE_ASSERT (directshow_cb_data_p);
+      ACE_ASSERT (directshow_cb_data_p->configuration);
 
       directshow_modulehandler_configuration_iterator =
-        directshow_ui_cb_data_p->configuration->streamConfiguration.find (ACE_TEXT_ALWAYS_CHAR (""));
-      ACE_ASSERT (directshow_modulehandler_configuration_iterator != directshow_ui_cb_data_p->configuration->streamConfiguration.end ());
+        directshow_cb_data_p->configuration->streamConfiguration.find (ACE_TEXT_ALWAYS_CHAR (""));
+      ACE_ASSERT (directshow_modulehandler_configuration_iterator != directshow_cb_data_p->configuration->streamConfiguration.end ());
       break;
     }
     case STREAM_MEDIAFRAMEWORK_MEDIAFOUNDATION:
     {
-      mediafoundation_ui_cb_data_p =
+      mediafoundation_cb_data_p =
         static_cast<struct Test_U_AudioEffect_MediaFoundation_UI_CBData*> (userData_in);
       // sanity check(s)
-      ACE_ASSERT (mediafoundation_ui_cb_data_p);
-      ACE_ASSERT (mediafoundation_ui_cb_data_p->configuration);
+      ACE_ASSERT (mediafoundation_cb_data_p);
+      ACE_ASSERT (mediafoundation_cb_data_p->configuration);
 
       mediafoundation_modulehandler_configuration_iterator =
-        mediafoundation_ui_cb_data_p->configuration->streamConfiguration.find (ACE_TEXT_ALWAYS_CHAR (""));
-      ACE_ASSERT (mediafoundation_modulehandler_configuration_iterator != mediafoundation_ui_cb_data_p->configuration->streamConfiguration.end ());
+        mediafoundation_cb_data_p->configuration->streamConfiguration.find (ACE_TEXT_ALWAYS_CHAR (""));
+      ACE_ASSERT (mediafoundation_modulehandler_configuration_iterator != mediafoundation_cb_data_p->configuration->streamConfiguration.end ());
       break;
     }
     default:
@@ -1570,8 +1495,8 @@ glarea_expose_event_cb (GtkWidget* widget_in,
     }
   } // end SWITCH
 #else
-  struct Test_U_AudioEffect_UI_CBData* data_p =
-    static_cast<struct Test_U_AudioEffect_UI_CBData*> (userData_in);
+  struct Olimex_Mod_MPU6050_GTK_CBData* data_p =
+    static_cast<struct Olimex_Mod_MPU6050_GTK_CBData*> (userData_in);
 
   // sanity check(s)
   ACE_ASSERT (data_p);

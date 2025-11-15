@@ -1,6 +1,8 @@
 if (UNIX)
 # include (CheckLibraryExists)
 # check_library_exists (pthread pthread_create "" HAVE_LIB_PTHREAD)
+ include (FindPkgConfig)
+
  find_package (Threads REQUIRED)
 endif ()
 
@@ -31,7 +33,6 @@ include (SSLConfig)
 
 if (UNIX)
  include (FindGettext)
- include (FindPkgConfig)
 
 # *NOTE*: libCommon requires libcap
  pkg_check_modules (PKG_CAP REQUIRED libcap)
@@ -153,6 +154,10 @@ add_executable (${EXECUTABLE} ${mod_mpu6050_EXE_SRCS} etc/olimex_mod_mpu6050.gtk
 #add_dependencies (${PROJECT_NAME} Common)
 #add_dependencies (${PROJECT_NAME} ACEStream)
 #add_dependencies (${PROJECT_NAME} ACENetwork)
+
+if (UNIX)
+ target_link_options (${EXECUTABLE} PUBLIC "-rdynamic")
+endif (UNIX)
 
 target_link_libraries (${EXECUTABLE} ${CMAKE_THREAD_LIBS_INIT})
 target_link_libraries (${EXECUTABLE} ${ACE_LIBRARY})

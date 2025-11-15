@@ -185,7 +185,7 @@ idle_initialize_ui_cb (gpointer userData_in)
 #if GTK_CHECK_VERSION (3,16,0)
   gl_area_p = GTK_GL_AREA (gtk_gl_area_new ());
   ACE_ASSERT (gl_area_p);
-  gtk_widget_realize (GTK_WIDGET (gl_area_p));
+  // gtk_widget_realize (GTK_WIDGET (gl_area_p));
   gl_context_p = gtk_gl_area_get_context (gl_area_p);
   //ACE_ASSERT (gl_context_p);
   state_r.OpenGLContexts.insert (std::make_pair (gl_area_p, gl_context_p));
@@ -277,14 +277,19 @@ idle_initialize_ui_cb (gpointer userData_in)
 
 #if GTK_CHECK_VERSION (3,0,0)
 #if GTK_CHECK_VERSION (3,16,0)
+  drawing_area_p = GTK_WIDGET (gl_area_p);
   gtk_widget_set_events (GTK_WIDGET (gl_area_p),
-                         GDK_EXPOSURE_MASK |
-                         GDK_BUTTON_PRESS_MASK);
+                         GDK_EXPOSURE_MASK       |
+                         GDK_POINTER_MOTION_MASK |
+                         GDK_BUTTON1_MOTION_MASK |
+                         GDK_BUTTON_PRESS_MASK   |
+                         GDK_KEY_PRESS_MASK      |
+                         GDK_STRUCTURE_MASK);
 #else
 #if defined (GTKGLAREA_SUPPORT)
   drawing_area_p = GTK_WIDGET (gl_area_p);
   gtk_widget_set_events (drawing_area_p,
-                         GDK_EXPOSURE_MASK |
+                         GDK_EXPOSURE_MASK       |
                          GDK_POINTER_MOTION_MASK |
                          GDK_BUTTON1_MOTION_MASK |
                          GDK_BUTTON_PRESS_MASK   |
@@ -592,6 +597,17 @@ idle_finalize_ui_cb (gpointer userData_in)
       static_cast<struct Olimex_Mod_MPU6050_GTK_CBData*> (userData_in);
   ACE_ASSERT (cb_data_p);
   ACE_ASSERT (cb_data_p->UIState);
+
+#if defined (GTKGL_SUPPORT)
+  // *NOTE*: somehow the 'unrealize' callback was not being called on the
+  //         GtkGLArea --> invoke manually
+  ACE_ASSERT (!cb_data_p->UIState->OpenGLContexts.empty ());
+  Common_UI_GTK_GLContextsIterator_t opengl_contexts_iterator =
+    cb_data_p->UIState->OpenGLContexts.begin ();
+  GtkWidget* widget_p = GTK_WIDGET ((*opengl_contexts_iterator).first);
+  gtk_widget_unrealize (widget_p);
+  cb_data_p->UIState->OpenGLContexts.clear ();
+#endif // GTKGL_SUPPORT
 
   // synch access
   { ACE_Guard<ACE_SYNCH_MUTEX> aGuard (cb_data_p->UIState->lock);
