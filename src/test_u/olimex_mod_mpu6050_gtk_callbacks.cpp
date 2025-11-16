@@ -601,12 +601,17 @@ idle_finalize_ui_cb (gpointer userData_in)
 #if defined (GTKGL_SUPPORT)
   // *NOTE*: somehow the 'unrealize' callback was not being called on the
   //         GtkGLArea --> invoke manually
-  ACE_ASSERT (!cb_data_p->UIState->OpenGLContexts.empty ());
-  Common_UI_GTK_GLContextsIterator_t opengl_contexts_iterator =
-    cb_data_p->UIState->OpenGLContexts.begin ();
-  GtkWidget* widget_p = GTK_WIDGET ((*opengl_contexts_iterator).first);
-  gtk_widget_unrealize (widget_p);
-  cb_data_p->UIState->OpenGLContexts.clear ();
+  { ACE_Guard<ACE_SYNCH_MUTEX> aGuard (cb_data_p->UIState->lock);
+    // *NOTE*: (on win32,) finalize seems to be called several times... :-(
+    if (!cb_data_p->UIState->OpenGLContexts.empty ())
+    {
+      Common_UI_GTK_GLContextsIterator_t opengl_contexts_iterator =
+        cb_data_p->UIState->OpenGLContexts.begin ();
+      GtkWidget* widget_p = GTK_WIDGET ((*opengl_contexts_iterator).first);
+      gtk_widget_unrealize (widget_p);
+      cb_data_p->UIState->OpenGLContexts.clear ();
+    } // end IF
+  } // end lock scope
 #endif // GTKGL_SUPPORT
 
   // synch access
@@ -621,9 +626,9 @@ idle_finalize_ui_cb (gpointer userData_in)
       ACE_DEBUG ((LM_DEBUG,
                   ACE_TEXT ("flushed %Q messages\n"),
                   num_messages));
-  } // end lock scope
 
-  cb_data_p->UIState->eventSourceIds.clear();
+    cb_data_p->UIState->eventSourceIds.clear ();
+  } // end lock scope
 
   gtk_main_quit ();
 
