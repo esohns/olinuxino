@@ -360,10 +360,10 @@ struct Olimex_Mod_MPU6050_NetlinkModuleHandlerConfiguration
 #endif // ACE_WIN32 || ACE_WIN64
 
 struct Olimex_Mod_MPU6050_StreamConfiguration
- : Stream_Configuration
+ : Stream_Net_StreamConfiguration
 {
   Olimex_Mod_MPU6050_StreamConfiguration ()
-   : Stream_Configuration ()
+   : Stream_Net_StreamConfiguration ()
    , userData (NULL)
   {}
 
