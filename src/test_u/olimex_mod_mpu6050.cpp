@@ -616,8 +616,8 @@ do_work (int argc_in,
   configuration_2.streamConfiguration.initialize (configuration_2.moduleConfiguration,
                                                   configuration_2.moduleHandlerConfiguration,
                                                   stream_configuration_2);
-  connectionManager_p->set (configuration_2.connectionConfiguration,
-                            &user_data); // passed to all handlers
+  //connectionManager_p->set (configuration_2.connectionConfiguration,
+  //                          &user_data); // passed to all handlers
   connection_configurations_a.insert (std::make_pair (ACE_TEXT_ALWAYS_CHAR ("CamSource"),
                                                       &configuration_2.connectionConfiguration));
 #if defined (ACE_WIN32) || defined (ACE_WIN64)
@@ -637,8 +637,8 @@ do_work (int argc_in,
                                                           netlink_stream_configuration_2);
   if (!clientMode_in)
   {
-    netlinkConnectionManager_p->set (netlink_configuration_2.connectionConfiguration,
-                                     &netlink_user_data); // passed to all handlers
+    //netlinkConnectionManager_p->set (netlink_configuration_2.connectionConfiguration,
+    //                                 &netlink_user_data); // passed to all handlers
   } // end IF
 #endif
 
